@@ -54,6 +54,10 @@ var (
 	ErrCustomReferralAlreadyBound         = infraerrors.Conflict("CUSTOM_REFERRAL_ALREADY_BOUND", "referral binding already exists")
 	ErrCustomReferralRateNotConfigured    = infraerrors.BadRequest("CUSTOM_REFERRAL_RATE_NOT_CONFIGURED", "default referral rate is not configured")
 	ErrCustomReferralPermissionDenied     = infraerrors.Forbidden("CUSTOM_REFERRAL_PERMISSION_DENIED", "user is not an approved affiliate")
+	ErrCustomReferralAdjustInsufficient   = infraerrors.BadRequest("CUSTOM_REFERRAL_ADJUST_INSUFFICIENT", "insufficient available commission for adjustment")
+	ErrCustomReferralInvalidWithdrawType  = infraerrors.BadRequest("CUSTOM_REFERRAL_INVALID_WITHDRAW_TYPE", "invalid withdrawal account type")
+	ErrCustomReferralInvalidWithdrawNet   = infraerrors.BadRequest("CUSTOM_REFERRAL_INVALID_WITHDRAW_NETWORK", "invalid withdrawal network")
+	ErrCustomReferralWithdrawAccountEmpty = infraerrors.BadRequest("CUSTOM_REFERRAL_WITHDRAW_ACCOUNT_REQUIRED", "withdrawal account is required")
 	ErrCustomReferralWithdrawDisabled     = infraerrors.Forbidden("CUSTOM_REFERRAL_WITHDRAW_DISABLED", "withdrawal is disabled")
 	ErrCustomReferralWithdrawTooSmall     = infraerrors.BadRequest("CUSTOM_REFERRAL_WITHDRAW_TOO_SMALL", "withdrawal amount is below minimum")
 	ErrCustomReferralWithdrawInsufficient = infraerrors.BadRequest("CUSTOM_REFERRAL_WITHDRAW_INSUFFICIENT", "insufficient available commission")
@@ -89,6 +93,12 @@ type CustomAffiliate struct {
 	Status             string     `json:"status"`
 	SourceType         string     `json:"source_type"`
 	RateOverride       *float64   `json:"rate_override,omitempty"`
+	ClickCount         int64      `json:"click_count"`
+	BoundUserCount     int64      `json:"bound_user_count"`
+	PaidUserCount      int64      `json:"paid_user_count"`
+	PendingAmount      float64    `json:"pending_amount"`
+	AvailableAmount    float64    `json:"available_amount"`
+	WithdrawnAmount    float64    `json:"withdrawn_amount"`
 	AcquisitionEnabled bool       `json:"acquisition_enabled"`
 	SettlementEnabled  bool       `json:"settlement_enabled"`
 	WithdrawalEnabled  bool       `json:"withdrawal_enabled"`
@@ -229,7 +239,11 @@ type CustomReferralCommission struct {
 	ID               int64      `json:"id"`
 	AffiliateID      int64      `json:"affiliate_id"`
 	AffiliateUserID  int64      `json:"affiliate_user_id"`
+	AffiliateEmail   string     `json:"affiliate_email,omitempty"`
 	OrderID          int64      `json:"order_id"`
+	InviteeUserID    int64      `json:"invitee_user_id"`
+	InviteeEmail     string     `json:"invitee_email,omitempty"`
+	InviteeUsername  string     `json:"invitee_username,omitempty"`
 	OrderType        string     `json:"order_type"`
 	BaseAmount       float64    `json:"base_amount"`
 	Rate             float64    `json:"rate"`
@@ -256,6 +270,14 @@ type CustomReferralSettlementBatch struct {
 	ErrorSummary string     `json:"error_summary"`
 }
 
+type CustomReferralBindingDetail struct {
+	ID            int64     `json:"id"`
+	InviteeUserID int64     `json:"invitee_user_id"`
+	InviteeEmail  string    `json:"invitee_email,omitempty"`
+	InviteeName   string    `json:"invitee_name,omitempty"`
+	BoundAt       time.Time `json:"bound_at"`
+}
+
 type CustomReferralRepository interface {
 	UpsertApprovedAffiliate(ctx context.Context, userID, adminID int64, rateOverride *float64) (*CustomAffiliate, error)
 	SetAffiliateStatus(ctx context.Context, userID, adminID int64, status string, acquisitionEnabled, settlementEnabled, withdrawalEnabled bool, reason string) (*CustomAffiliate, error)
@@ -265,15 +287,20 @@ type CustomReferralRepository interface {
 	BindInvitee(ctx context.Context, inviteeUserID, affiliateID, inviterUserID int64, bindSource, bindCode string, boundAt time.Time) (bool, error)
 	CreatePendingCommissionForOrder(ctx context.Context, order CustomReferralOrderInput, rate float64, freezeDays int) (float64, error)
 	ReverseCommissionForRefund(ctx context.Context, refund CustomReferralRefundInput) (float64, error)
+	SettleDueCommissions(ctx context.Context, now time.Time) error
 	GetDashboardByUserID(ctx context.Context, userID int64) (*CustomReferralDashboard, error)
 	ListAffiliates(ctx context.Context, params CustomReferralListParams) ([]CustomAffiliate, int64, error)
+	ListAffiliateBindings(ctx context.Context, affiliateUserID int64, page, pageSize int) ([]CustomReferralBindingDetail, int64, error)
 	GetAdminOverview(ctx context.Context) (*CustomReferralAdminOverview, error)
+	AdjustAffiliateCommission(ctx context.Context, userID, adminID int64, delta float64, remark string) (*CustomAffiliate, error)
 	ListCommissionsByUserID(ctx context.Context, userID int64, params CustomReferralCommissionListParams) ([]CustomReferralCommission, int64, error)
 	ListCommissions(ctx context.Context, params CustomReferralCommissionListParams) ([]CustomReferralCommission, int64, error)
+	ListAffiliateCommissions(ctx context.Context, affiliateUserID int64, params CustomReferralCommissionListParams) ([]CustomReferralCommission, int64, error)
 	RunSettlementBatch(ctx context.Context, now time.Time) (*CustomReferralSettlementBatch, error)
 	CreateWithdrawal(ctx context.Context, input CustomReferralWithdrawalCreateInput, feeAmount float64) (*CustomReferralWithdrawal, error)
 	ListWithdrawalsByUserID(ctx context.Context, userID int64, params CustomReferralWithdrawalListParams) ([]CustomReferralWithdrawal, int64, error)
 	ListWithdrawals(ctx context.Context, params CustomReferralWithdrawalListParams) ([]CustomReferralWithdrawal, int64, error)
+	ListAffiliateWithdrawals(ctx context.Context, affiliateUserID int64, params CustomReferralWithdrawalListParams) ([]CustomReferralWithdrawal, int64, error)
 	CancelWithdrawal(ctx context.Context, withdrawalID, userID int64) (*CustomReferralWithdrawal, error)
 	ApproveWithdrawal(ctx context.Context, input CustomReferralWithdrawalReviewInput, deadlineAt time.Time) (*CustomReferralWithdrawal, error)
 	RejectWithdrawal(ctx context.Context, input CustomReferralWithdrawalReviewInput) (*CustomReferralWithdrawal, error)
@@ -374,7 +401,7 @@ func (s *CustomReferralService) BuildSignedCookieValue(code string, issuedAt tim
 	return base64.RawURLEncoding.EncodeToString([]byte(payload + "." + signature)), nil
 }
 
-func (s *CustomReferralService) ParseSignedCookieValue(raw string) (string, error) {
+func (s *CustomReferralService) ParseSignedCookieValue(ctx context.Context, raw string) (string, error) {
 	secret := s.cookieSecret()
 	if secret == "" {
 		return "", fmt.Errorf("missing cookie signing secret")
@@ -394,6 +421,23 @@ func (s *CustomReferralService) ParseSignedCookieValue(raw string) (string, erro
 	expected := hex.EncodeToString(mac.Sum(nil))
 	if !hmac.Equal([]byte(expected), []byte(parts[2])) {
 		return "", fmt.Errorf("invalid cookie signature")
+	}
+	issuedAt, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return "", fmt.Errorf("invalid cookie timestamp")
+	}
+	cfg := &CustomReferralConfig{CookieTTLDays: customReferralDefaultCookieTTLDays}
+	if s != nil {
+		if loaded, loadErr := s.loadConfig(ctx); loadErr == nil && loaded != nil {
+			cfg = loaded
+		}
+	}
+	issuedTime := time.Unix(issuedAt, 0)
+	if issuedTime.After(time.Now().Add(5 * time.Minute)) {
+		return "", fmt.Errorf("cookie issued_at is invalid")
+	}
+	if cfg.CookieTTLDays > 0 && issuedTime.Add(time.Duration(cfg.CookieTTLDays)*24*time.Hour).Before(time.Now()) {
+		return "", fmt.Errorf("cookie expired")
 	}
 	return code, nil
 }
@@ -511,7 +555,7 @@ func (s *CustomReferralService) DisableAffiliate(ctx context.Context, userID, ad
 	if s == nil || s.repo == nil {
 		return nil, ErrServiceUnavailable
 	}
-	return s.repo.SetAffiliateStatus(ctx, userID, adminID, CustomAffiliateStatusDisabled, false, true, true, strings.TrimSpace(reason))
+	return s.repo.SetAffiliateStatus(ctx, userID, adminID, CustomAffiliateStatusDisabled, false, false, false, strings.TrimSpace(reason))
 }
 
 func (s *CustomReferralService) RejectAffiliate(ctx context.Context, userID, adminID int64, reason string) (*CustomAffiliate, error) {
@@ -585,9 +629,25 @@ func (s *CustomReferralService) ListAffiliates(ctx context.Context, params Custo
 	return s.repo.ListAffiliates(ctx, params)
 }
 
+func (s *CustomReferralService) ListAffiliateBindings(ctx context.Context, affiliateUserID int64, page, pageSize int) ([]CustomReferralBindingDetail, int64, error) {
+	if s == nil || s.repo == nil {
+		return nil, 0, ErrServiceUnavailable
+	}
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	return s.repo.ListAffiliateBindings(ctx, affiliateUserID, page, pageSize)
+}
+
 func (s *CustomReferralService) GetAdminOverview(ctx context.Context) (*CustomReferralAdminOverview, error) {
 	if s == nil || s.repo == nil {
 		return nil, ErrServiceUnavailable
+	}
+	if err := s.settleDueCommissions(ctx); err != nil {
+		return nil, err
 	}
 	return s.repo.GetAdminOverview(ctx)
 }
@@ -659,6 +719,9 @@ func (s *CustomReferralService) ListUserCommissions(ctx context.Context, userID 
 	if s == nil || s.repo == nil {
 		return nil, 0, ErrServiceUnavailable
 	}
+	if err := s.settleDueCommissions(ctx); err != nil {
+		return nil, 0, err
+	}
 	if params.Page <= 0 {
 		params.Page = 1
 	}
@@ -672,6 +735,9 @@ func (s *CustomReferralService) ListCommissions(ctx context.Context, params Cust
 	if s == nil || s.repo == nil {
 		return nil, 0, ErrServiceUnavailable
 	}
+	if err := s.settleDueCommissions(ctx); err != nil {
+		return nil, 0, err
+	}
 	if params.Page <= 0 {
 		params.Page = 1
 	}
@@ -679,6 +745,22 @@ func (s *CustomReferralService) ListCommissions(ctx context.Context, params Cust
 		params.PageSize = 20
 	}
 	return s.repo.ListCommissions(ctx, params)
+}
+
+func (s *CustomReferralService) ListAffiliateCommissions(ctx context.Context, affiliateUserID int64, params CustomReferralCommissionListParams) ([]CustomReferralCommission, int64, error) {
+	if s == nil || s.repo == nil {
+		return nil, 0, ErrServiceUnavailable
+	}
+	if err := s.settleDueCommissions(ctx); err != nil {
+		return nil, 0, err
+	}
+	if params.Page <= 0 {
+		params.Page = 1
+	}
+	if params.PageSize <= 0 {
+		params.PageSize = 20
+	}
+	return s.repo.ListAffiliateCommissions(ctx, affiliateUserID, params)
 }
 
 func (s *CustomReferralService) RunSettlementBatch(ctx context.Context) (*CustomReferralSettlementBatch, error) {
@@ -692,6 +774,9 @@ func (s *CustomReferralService) CreateWithdrawal(ctx context.Context, input Cust
 	if s == nil || s.repo == nil {
 		return nil, ErrServiceUnavailable
 	}
+	if err := s.settleDueCommissions(ctx); err != nil {
+		return nil, err
+	}
 	cfg, err := s.loadConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -702,12 +787,43 @@ func (s *CustomReferralService) CreateWithdrawal(ctx context.Context, input Cust
 	if cfg.MinWithdrawAmount > 0 && input.Amount < cfg.MinWithdrawAmount {
 		return nil, ErrCustomReferralWithdrawTooSmall
 	}
+	input.AccountType = strings.ToLower(strings.TrimSpace(input.AccountType))
+	input.AccountNo = strings.TrimSpace(input.AccountNo)
+	input.AccountNetwork = strings.TrimSpace(input.AccountNetwork)
+	input.AccountName = strings.TrimSpace(input.AccountName)
+	input.QRImageURL = strings.TrimSpace(input.QRImageURL)
+	input.ContactInfo = ""
+	input.ApplicantNote = strings.TrimSpace(input.ApplicantNote)
+	if input.AccountNo == "" {
+		return nil, ErrCustomReferralWithdrawAccountEmpty
+	}
+	switch input.AccountType {
+	case "alipay", "wechat":
+		input.AccountNetwork = ""
+	case "usdt":
+		switch strings.ToUpper(input.AccountNetwork) {
+		case "TRC20", "BEP20", "POLYGON":
+			if strings.EqualFold(input.AccountNetwork, "Polygon") {
+				input.AccountNetwork = "Polygon"
+			} else {
+				input.AccountNetwork = strings.ToUpper(input.AccountNetwork)
+			}
+			input.AccountName = ""
+		default:
+			return nil, ErrCustomReferralInvalidWithdrawNet
+		}
+	default:
+		return nil, ErrCustomReferralInvalidWithdrawType
+	}
 	return s.repo.CreateWithdrawal(ctx, input, cfg.WithdrawFee)
 }
 
 func (s *CustomReferralService) ListUserWithdrawals(ctx context.Context, userID int64, params CustomReferralWithdrawalListParams) ([]CustomReferralWithdrawal, int64, error) {
 	if s == nil || s.repo == nil {
 		return nil, 0, ErrServiceUnavailable
+	}
+	if err := s.settleDueCommissions(ctx); err != nil {
+		return nil, 0, err
 	}
 	if params.Page <= 0 {
 		params.Page = 1
@@ -722,6 +838,9 @@ func (s *CustomReferralService) ListWithdrawals(ctx context.Context, params Cust
 	if s == nil || s.repo == nil {
 		return nil, 0, ErrServiceUnavailable
 	}
+	if err := s.settleDueCommissions(ctx); err != nil {
+		return nil, 0, err
+	}
 	if params.Page <= 0 {
 		params.Page = 1
 	}
@@ -729,6 +848,32 @@ func (s *CustomReferralService) ListWithdrawals(ctx context.Context, params Cust
 		params.PageSize = 20
 	}
 	return s.repo.ListWithdrawals(ctx, params)
+}
+
+func (s *CustomReferralService) ListAffiliateWithdrawals(ctx context.Context, affiliateUserID int64, params CustomReferralWithdrawalListParams) ([]CustomReferralWithdrawal, int64, error) {
+	if s == nil || s.repo == nil {
+		return nil, 0, ErrServiceUnavailable
+	}
+	if err := s.settleDueCommissions(ctx); err != nil {
+		return nil, 0, err
+	}
+	if params.Page <= 0 {
+		params.Page = 1
+	}
+	if params.PageSize <= 0 {
+		params.PageSize = 20
+	}
+	return s.repo.ListAffiliateWithdrawals(ctx, affiliateUserID, params)
+}
+
+func (s *CustomReferralService) AdjustAffiliateCommission(ctx context.Context, userID, adminID int64, delta float64, remark string) (*CustomAffiliate, error) {
+	if s == nil || s.repo == nil {
+		return nil, ErrServiceUnavailable
+	}
+	if delta == 0 {
+		return nil, infraerrors.BadRequest("CUSTOM_REFERRAL_ADJUST_ZERO", "adjust amount must not be zero")
+	}
+	return s.repo.AdjustAffiliateCommission(ctx, userID, adminID, delta, strings.TrimSpace(remark))
 }
 
 func (s *CustomReferralService) CancelWithdrawal(ctx context.Context, withdrawalID, userID int64) (*CustomReferralWithdrawal, error) {
@@ -757,6 +902,13 @@ func (s *CustomReferralService) MarkWithdrawalPaid(ctx context.Context, input Cu
 		return nil, ErrServiceUnavailable
 	}
 	return s.repo.MarkWithdrawalPaid(ctx, input)
+}
+
+func (s *CustomReferralService) settleDueCommissions(ctx context.Context) error {
+	if s == nil || s.repo == nil || !s.IsEnabled(ctx) {
+		return nil
+	}
+	return s.repo.SettleDueCommissions(ctx, time.Now())
 }
 
 func (s *CustomReferralService) cookieSecret() string {

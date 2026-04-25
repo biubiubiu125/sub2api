@@ -1,6 +1,8 @@
 <template>
   <AppLayout>
     <div class="space-y-4">
+      <ReferralNavTabs />
+
       <div class="card p-4">
         <div class="flex flex-wrap items-center gap-3">
           <div class="w-full sm:w-44">
@@ -86,17 +88,13 @@
             <div class="text-sm text-gray-500 dark:text-dark-400">收款方式</div>
             <div class="mt-1 text-sm text-gray-900 dark:text-white">{{ accountTypeLabel(selectedItem) }}</div>
           </div>
-          <div>
+          <div v-if="selectedItem.account_name">
             <div class="text-sm text-gray-500 dark:text-dark-400">收款人姓名</div>
-            <div class="mt-1 text-sm text-gray-900 dark:text-white">{{ selectedItem.account_name || '-' }}</div>
+            <div class="mt-1 text-sm text-gray-900 dark:text-white">{{ selectedItem.account_name }}</div>
           </div>
           <div class="md:col-span-2">
             <div class="text-sm text-gray-500 dark:text-dark-400">收款账号</div>
             <div class="mt-1 break-all text-sm text-gray-900 dark:text-white">{{ selectedItem.account_no || '-' }}</div>
-          </div>
-          <div class="md:col-span-2" v-if="selectedItem.contact_info">
-            <div class="text-sm text-gray-500 dark:text-dark-400">联系方式</div>
-            <div class="mt-1 text-sm text-gray-900 dark:text-white">{{ selectedItem.contact_info }}</div>
           </div>
           <div class="md:col-span-2" v-if="selectedItem.applicant_note">
             <div class="text-sm text-gray-500 dark:text-dark-400">备注说明</div>
@@ -112,13 +110,40 @@
           </div>
           <div class="md:col-span-2" v-if="selectedItem.qr_image_url">
             <div class="mb-2 text-sm text-gray-500 dark:text-dark-400">收款二维码</div>
-            <img :src="selectedItem.qr_image_url" alt="" class="max-h-72 rounded-lg border border-gray-200 dark:border-dark-700" />
+            <button
+              type="button"
+              class="block rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+              @click="openImagePreview(selectedItem.qr_image_url, '收款二维码')"
+            >
+              <img :src="selectedItem.qr_image_url" alt="" class="max-h-72 rounded-lg border border-gray-200 dark:border-dark-700" />
+            </button>
+            <div class="mt-2 text-xs text-gray-500 dark:text-dark-400">点击图片可放大预览</div>
           </div>
           <div class="md:col-span-2" v-if="selectedItem.payment_proof_url">
             <div class="mb-2 text-sm text-gray-500 dark:text-dark-400">打款凭证</div>
-            <img :src="selectedItem.payment_proof_url" alt="" class="max-h-72 rounded-lg border border-gray-200 dark:border-dark-700" />
+            <button
+              type="button"
+              class="block rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+              @click="openImagePreview(selectedItem.payment_proof_url, '打款凭证')"
+            >
+              <img :src="selectedItem.payment_proof_url" alt="" class="max-h-72 rounded-lg border border-gray-200 dark:border-dark-700" />
+            </button>
+            <div class="mt-2 text-xs text-gray-500 dark:text-dark-400">点击图片可放大预览</div>
           </div>
         </div>
+      </BaseDialog>
+      <BaseDialog :show="imagePreview.visible" :title="imagePreview.title" width="full" @close="closeImagePreview">
+        <div class="flex justify-center">
+          <img
+            v-if="imagePreview.url"
+            :src="imagePreview.url"
+            :alt="imagePreview.title"
+            class="max-h-[75vh] max-w-full rounded-lg border border-gray-200 object-contain dark:border-dark-700"
+          />
+        </div>
+        <template #footer>
+          <button class="btn btn-secondary" @click="closeImagePreview">关闭</button>
+        </template>
       </BaseDialog>
     </div>
   </AppLayout>
@@ -132,6 +157,7 @@ import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import Icon from '@/components/icons/Icon.vue'
+import ReferralNavTabs from '@/components/referral/ReferralNavTabs.vue'
 import { referralAPI } from '@/api/referral'
 import type { CustomReferralWithdrawal } from '@/types'
 import { useAppStore } from '@/stores/app'
@@ -143,6 +169,11 @@ const loading = ref(false)
 const items = ref<CustomReferralWithdrawal[]>([])
 const selectedItem = ref<CustomReferralWithdrawal | null>(null)
 const detailVisible = ref(false)
+const imagePreview = reactive({
+  visible: false,
+  title: '',
+  url: '',
+})
 const filters = reactive({ status: '' })
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
 
@@ -156,7 +187,7 @@ const statusOptions = computed(() => [
 ])
 
 function formatMoney(value: number): string {
-  return `¥${value.toFixed(2)}`
+  return `￥${value.toFixed(2)}`
 }
 
 function statusLabel(value: string): string {
@@ -215,6 +246,18 @@ async function cancelWithdrawal(id: number): Promise<void> {
 function openDetail(item: CustomReferralWithdrawal): void {
   selectedItem.value = item
   detailVisible.value = true
+}
+
+function openImagePreview(url: string, title: string): void {
+  imagePreview.visible = true
+  imagePreview.title = title
+  imagePreview.url = url
+}
+
+function closeImagePreview(): void {
+  imagePreview.visible = false
+  imagePreview.title = ''
+  imagePreview.url = ''
 }
 
 function handlePageChange(page: number): void {

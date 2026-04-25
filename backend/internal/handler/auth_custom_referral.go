@@ -32,7 +32,7 @@ func (h *AuthHandler) resolveAffiliateCode(c *gin.Context, raw string) string {
 	if err != nil {
 		return ""
 	}
-	code, err = h.customReferralService.ParseSignedCookieValue(decoded)
+	code, err = h.customReferralService.ParseSignedCookieValue(c.Request.Context(), decoded)
 	if err != nil {
 		return ""
 	}

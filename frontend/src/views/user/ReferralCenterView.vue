@@ -1,6 +1,8 @@
 <template>
   <AppLayout>
     <div class="space-y-6">
+      <ReferralNavTabs />
+
       <div v-if="loading" class="flex items-center justify-center py-12">
         <LoadingSpinner />
       </div>
@@ -19,7 +21,7 @@
             <div class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{{ summary.click_count }}</div>
           </div>
           <div class="card p-5">
-            <div class="text-sm text-gray-500 dark:text-dark-400">成功绑定用户数量</div>
+            <div class="text-sm text-gray-500 dark:text-dark-400">绑定用户数量</div>
             <div class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">{{ summary.bound_user_count }}</div>
           </div>
           <div class="card p-5">
@@ -60,7 +62,7 @@
               </div>
             </div>
 
-            <div class="grid w-full gap-4 sm:grid-cols-2 lg:w-[28rem]">
+            <div class="grid w-full gap-4 sm:grid-cols-3 lg:w-[32rem]">
               <div class="rounded-lg border border-gray-200 px-4 py-3 dark:border-dark-700">
                 <div class="text-sm text-gray-500 dark:text-dark-400">待结算佣金</div>
                 <div class="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{{ formatMoney(summary.pending_amount) }}</div>
@@ -68,10 +70,6 @@
               <div class="rounded-lg border border-gray-200 px-4 py-3 dark:border-dark-700">
                 <div class="text-sm text-gray-500 dark:text-dark-400">可提现佣金</div>
                 <div class="mt-2 text-xl font-semibold text-emerald-600 dark:text-emerald-400">{{ formatMoney(summary.available_amount) }}</div>
-              </div>
-              <div class="rounded-lg border border-gray-200 px-4 py-3 dark:border-dark-700">
-                <div class="text-sm text-gray-500 dark:text-dark-400">冻结金额</div>
-                <div class="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{{ formatMoney(summary.frozen_amount) }}</div>
               </div>
               <div class="rounded-lg border border-gray-200 px-4 py-3 dark:border-dark-700">
                 <div class="text-sm text-gray-500 dark:text-dark-400">已提现金额</div>
@@ -101,7 +99,7 @@
               </div>
               <div>
                 <div class="font-medium text-gray-900 dark:text-white">提现申请</div>
-                <div class="text-sm text-gray-500 dark:text-dark-400">提交收款信息并发起提现</div>
+                <div class="text-sm text-gray-500 dark:text-dark-400">填写收款信息并提交申请</div>
               </div>
             </div>
           </RouterLink>
@@ -129,6 +127,7 @@ import { RouterLink } from 'vue-router'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import Icon from '@/components/icons/Icon.vue'
+import ReferralNavTabs from '@/components/referral/ReferralNavTabs.vue'
 import { useAppStore } from '@/stores/app'
 import { useReferralStore } from '@/stores/referral'
 
@@ -143,7 +142,7 @@ const inviteLink = computed(() => {
 })
 
 function formatMoney(value: number): string {
-  return `¥${value.toFixed(2)}`
+  return `￥${value.toFixed(2)}`
 }
 
 function formatRate(value?: number | null): string {

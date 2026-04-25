@@ -3,9 +3,7 @@
     <div class="space-y-6">
       <div>
         <h2 class="text-xl font-semibold text-gray-900 dark:text-white">推广分佣设置</h2>
-        <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">
-          用于配置推广归因、冻结结算和提现规则，保存后立即生效。
-        </p>
+        <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">用于配置启用状态、Cookie 天数、冻结期和提现规则。</p>
       </div>
 
       <div v-if="loading" class="flex items-center justify-center py-12">
@@ -15,7 +13,7 @@
       <form v-else class="card space-y-6 p-6" @submit.prevent="saveSettings">
         <div class="grid gap-4 md:grid-cols-2">
           <div>
-            <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">返佣引擎</label>
+            <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">推广分佣</label>
             <Select v-model="form.provider" :options="providerOptions" />
           </div>
           <div>
@@ -41,7 +39,7 @@
         </div>
 
         <div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600 dark:border-dark-700 dark:bg-dark-900 dark:text-dark-300">
-          未设置全局返佣比例时，即使启用了推广分佣模块，也不会为新订单生成佣金。
+          启用前需要先设置全局返佣比例，否则系统不会为新订单生成佣金。
         </div>
 
         <div class="flex items-center justify-end gap-3">
@@ -81,7 +79,7 @@ const form = reactive({
 
 const providerOptions = [
   { value: 'disabled', label: '关闭' },
-  { value: 'custom', label: '自定义模块' },
+  { value: 'custom', label: '开启' },
 ]
 
 async function loadSettings(): Promise<void> {

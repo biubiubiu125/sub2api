@@ -33,6 +33,11 @@ type disableAffiliateRequest struct {
 	Reason string `json:"reason"`
 }
 
+type adjustAffiliateRequest struct {
+	Amount float64 `json:"amount"`
+	Remark string  `json:"remark"`
+}
+
 type reviewWithdrawalRequest struct {
 	AdminNote    string `json:"admin_note"`
 	RejectReason string `json:"reject_reason"`
@@ -100,6 +105,20 @@ func (h *ReferralHandler) ListAffiliates(c *gin.Context) {
 		Status:   strings.TrimSpace(c.Query("status")),
 		Keyword:  strings.TrimSpace(c.Query("keyword")),
 	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Paginated(c, items, total, page, pageSize)
+}
+
+func (h *ReferralHandler) ListAffiliateBindings(c *gin.Context) {
+	userID, ok := parseReferralUserID(c)
+	if !ok {
+		return
+	}
+	page, pageSize := response.ParsePagination(c)
+	items, total, err := h.referralService.ListAffiliateBindings(c.Request.Context(), userID, page, pageSize)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -187,6 +206,29 @@ func (h *ReferralHandler) RestoreAffiliate(c *gin.Context) {
 		return
 	}
 	item, err := h.referralService.RestoreAffiliate(c.Request.Context(), userID, subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, item)
+}
+
+func (h *ReferralHandler) AdjustAffiliate(c *gin.Context) {
+	userID, ok := parseReferralUserID(c)
+	if !ok {
+		return
+	}
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok || subject.UserID <= 0 {
+		response.Unauthorized(c, "Unauthorized")
+		return
+	}
+	var req adjustAffiliateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	item, err := h.referralService.AdjustAffiliateCommission(c.Request.Context(), userID, subject.UserID, req.Amount, req.Remark)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -287,6 +329,24 @@ func (h *ReferralHandler) RunSettlementBatch(c *gin.Context) {
 
 func (h *ReferralHandler) ListCommissions(c *gin.Context) {
 	page, pageSize := response.ParsePagination(c)
+	if affiliateUserID := strings.TrimSpace(c.Query("affiliate_user_id")); affiliateUserID != "" {
+		userID, err := strconv.ParseInt(affiliateUserID, 10, 64)
+		if err != nil || userID <= 0 {
+			response.BadRequest(c, "invalid affiliate_user_id")
+			return
+		}
+		items, total, err := h.referralService.ListAffiliateCommissions(c.Request.Context(), userID, service.CustomReferralCommissionListParams{
+			Page:     page,
+			PageSize: pageSize,
+			Status:   strings.TrimSpace(c.Query("status")),
+		})
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		response.Paginated(c, items, total, page, pageSize)
+		return
+	}
 	items, total, err := h.referralService.ListCommissions(c.Request.Context(), service.CustomReferralCommissionListParams{
 		Page:     page,
 		PageSize: pageSize,
@@ -301,6 +361,24 @@ func (h *ReferralHandler) ListCommissions(c *gin.Context) {
 
 func (h *ReferralHandler) ListWithdrawals(c *gin.Context) {
 	page, pageSize := response.ParsePagination(c)
+	if affiliateUserID := strings.TrimSpace(c.Query("affiliate_user_id")); affiliateUserID != "" {
+		userID, err := strconv.ParseInt(affiliateUserID, 10, 64)
+		if err != nil || userID <= 0 {
+			response.BadRequest(c, "invalid affiliate_user_id")
+			return
+		}
+		items, total, err := h.referralService.ListAffiliateWithdrawals(c.Request.Context(), userID, service.CustomReferralWithdrawalListParams{
+			Page:     page,
+			PageSize: pageSize,
+			Status:   strings.TrimSpace(c.Query("status")),
+		})
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		response.Paginated(c, items, total, page, pageSize)
+		return
+	}
 	items, total, err := h.referralService.ListWithdrawals(c.Request.Context(), service.CustomReferralWithdrawalListParams{
 		Page:     page,
 		PageSize: pageSize,
@@ -404,19 +482,19 @@ func (h *ReferralHandler) UploadAsset(c *gin.Context) {
 	}
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
-		response.BadRequest(c, "file is required")
+		response.BadRequest(c, "请选择要上传的图片")
 		return
 	}
 	file, err := fileHeader.Open()
 	if err != nil {
-		response.InternalError(c, "failed to open upload")
+		response.InternalError(c, "无法读取上传文件")
 		return
 	}
 	defer func() { _ = file.Close() }()
 
 	data, err := io.ReadAll(file)
 	if err != nil {
-		response.InternalError(c, "failed to read upload")
+		response.InternalError(c, "读取上传文件失败")
 		return
 	}
 	contentType := http.DetectContentType(data)

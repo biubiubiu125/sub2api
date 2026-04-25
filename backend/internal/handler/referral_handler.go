@@ -174,19 +174,19 @@ func (h *ReferralHandler) UploadAsset(c *gin.Context) {
 	}
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
-		response.BadRequest(c, "file is required")
+		response.BadRequest(c, "请选择要上传的二维码图片")
 		return
 	}
 	file, err := fileHeader.Open()
 	if err != nil {
-		response.InternalError(c, "failed to open upload")
+		response.InternalError(c, "无法读取上传文件")
 		return
 	}
 	defer func() { _ = file.Close() }()
 
 	data, err := io.ReadAll(file)
 	if err != nil {
-		response.InternalError(c, "failed to read upload")
+		response.InternalError(c, "读取上传文件失败")
 		return
 	}
 	contentType := http.DetectContentType(data)
