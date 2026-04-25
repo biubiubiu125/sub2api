@@ -18,13 +18,14 @@ import (
 
 // AuthHandler handles authentication-related requests
 type AuthHandler struct {
-	cfg           *config.Config
-	authService   *service.AuthService
-	userService   *service.UserService
-	settingSvc    *service.SettingService
-	promoService  *service.PromoService
-	redeemService *service.RedeemService
-	totpService   *service.TotpService
+	cfg                   *config.Config
+	authService           *service.AuthService
+	userService           *service.UserService
+	settingSvc            *service.SettingService
+	promoService          *service.PromoService
+	redeemService         *service.RedeemService
+	totpService           *service.TotpService
+	customReferralService *service.CustomReferralService
 }
 
 // NewAuthHandler creates a new AuthHandler
@@ -106,6 +107,7 @@ func (h *AuthHandler) respondWithTokenPair(c *gin.Context, user *service.User) {
 			response.InternalError(c, "Failed to generate token")
 			return
 		}
+		h.clearCustomReferralCookie(c)
 		response.Success(c, AuthResponse{
 			AccessToken: token,
 			TokenType:   "Bearer",
@@ -113,6 +115,7 @@ func (h *AuthHandler) respondWithTokenPair(c *gin.Context, user *service.User) {
 		})
 		return
 	}
+	h.clearCustomReferralCookie(c)
 	response.Success(c, AuthResponse{
 		AccessToken:  tokenPair.AccessToken,
 		RefreshToken: tokenPair.RefreshToken,
@@ -172,7 +175,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		req.VerifyCode,
 		req.PromoCode,
 		req.InvitationCode,
-		req.AffCode,
+		h.resolveAffiliateCode(c, req.AffCode),
 	)
 	if err != nil {
 		response.ErrorFrom(c, err)

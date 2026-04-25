@@ -391,6 +391,53 @@ func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupReposit
 	return svc
 }
 
+func ProvideAuthService(
+	entClient *dbent.Client,
+	userRepo UserRepository,
+	redeemRepo RedeemCodeRepository,
+	refreshTokenCache RefreshTokenCache,
+	cfg *config.Config,
+	settingService *SettingService,
+	emailService *EmailService,
+	turnstileService *TurnstileService,
+	emailQueueService *EmailQueueService,
+	promoService *PromoService,
+	defaultSubAssigner DefaultSubscriptionAssigner,
+	customReferralService *CustomReferralService,
+) *AuthService {
+	svc := NewAuthService(
+		entClient,
+		userRepo,
+		redeemRepo,
+		refreshTokenCache,
+		cfg,
+		settingService,
+		emailService,
+		turnstileService,
+		emailQueueService,
+		promoService,
+		defaultSubAssigner,
+	)
+	svc.SetCustomReferralService(customReferralService)
+	return svc
+}
+
+func ProvidePaymentService(
+	entClient *dbent.Client,
+	registry *payment.Registry,
+	loadBalancer payment.LoadBalancer,
+	redeemService *RedeemService,
+	subscriptionSvc *SubscriptionService,
+	configService *PaymentConfigService,
+	userRepo UserRepository,
+	groupRepo GroupRepository,
+	customReferralService *CustomReferralService,
+) *PaymentService {
+	svc := NewPaymentService(entClient, registry, loadBalancer, redeemService, subscriptionSvc, configService, userRepo, groupRepo)
+	svc.SetCustomReferralService(customReferralService)
+	return svc
+}
+
 // ProvideBillingCacheService wires BillingCacheService with its RPM dependencies.
 func ProvideBillingCacheService(
 	cache BillingCache,
@@ -407,7 +454,7 @@ func ProvideBillingCacheService(
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
 	// Core services
-	NewAuthService,
+	ProvideAuthService,
 	NewUserService,
 	NewAPIKeyService,
 	ProvideAPIKeyAuthCacheInvalidator,
@@ -457,6 +504,8 @@ var ProviderSet = wire.NewSet(
 	NewTurnstileService,
 	NewSubscriptionService,
 	wire.Bind(new(DefaultSubscriptionAssigner), new(*SubscriptionService)),
+	NewCustomReferralService,
+	NewReferralAssetService,
 	ProvideConcurrencyService,
 	ProvideUserMessageQueueService,
 	NewUsageRecordWorkerPool,
@@ -486,9 +535,8 @@ var ProviderSet = wire.NewSet(
 	NewGroupCapacityService,
 	NewChannelService,
 	NewModelPricingResolver,
-	NewAffiliateService,
 	ProvidePaymentConfigService,
-	NewPaymentService,
+	ProvidePaymentService,
 	ProvidePaymentOrderExpiryService,
 	ProvideBalanceNotifyService,
 	ProvideChannelMonitorService,

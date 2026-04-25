@@ -62,18 +62,18 @@ type JWTClaims struct {
 
 // AuthService 认证服务
 type AuthService struct {
-	entClient          *dbent.Client
-	userRepo           UserRepository
-	redeemRepo         RedeemCodeRepository
-	refreshTokenCache  RefreshTokenCache
-	cfg                *config.Config
-	settingService     *SettingService
-	emailService       *EmailService
-	turnstileService   *TurnstileService
-	emailQueueService  *EmailQueueService
-	promoService       *PromoService
-	affiliateService   *AffiliateService
-	defaultSubAssigner DefaultSubscriptionAssigner
+	entClient             *dbent.Client
+	userRepo              UserRepository
+	redeemRepo            RedeemCodeRepository
+	refreshTokenCache     RefreshTokenCache
+	cfg                   *config.Config
+	settingService        *SettingService
+	emailService          *EmailService
+	turnstileService      *TurnstileService
+	emailQueueService     *EmailQueueService
+	promoService          *PromoService
+	customReferralService *CustomReferralService
+	defaultSubAssigner    DefaultSubscriptionAssigner
 }
 
 type DefaultSubscriptionAssigner interface {
@@ -99,7 +99,6 @@ func NewAuthService(
 	emailQueueService *EmailQueueService,
 	promoService *PromoService,
 	defaultSubAssigner DefaultSubscriptionAssigner,
-	affiliateService *AffiliateService,
 ) *AuthService {
 	return &AuthService{
 		entClient:          entClient,
@@ -112,7 +111,6 @@ func NewAuthService(
 		turnstileService:   turnstileService,
 		emailQueueService:  emailQueueService,
 		promoService:       promoService,
-		affiliateService:   affiliateService,
 		defaultSubAssigner: defaultSubAssigner,
 	}
 }
@@ -124,13 +122,37 @@ func (s *AuthService) EntClient() *dbent.Client {
 	return s.entClient
 }
 
+func (s *AuthService) SetCustomReferralService(customReferralService *CustomReferralService) {
+	if s == nil {
+		return
+	}
+	s.customReferralService = customReferralService
+}
+
+func (s *AuthService) bootstrapAffiliateProfile(ctx context.Context, userID int64, affiliateCode string) {
+	if s == nil || s.customReferralService == nil || userID <= 0 || !s.customReferralService.IsEnabled(ctx) {
+		return
+	}
+	if err := s.customReferralService.BindInviteeByCode(ctx, userID, affiliateCode); err != nil &&
+		!errors.Is(err, ErrCustomReferralAlreadyBound) &&
+		!errors.Is(err, ErrCustomReferralAffiliateNotFound) {
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to bind custom referral inviter for user %d: %v", userID, err)
+	}
+}
+
 // Register 用户注册，返回token和用户
 func (s *AuthService) Register(ctx context.Context, email, password string) (string, *User, error) {
-	return s.RegisterWithVerification(ctx, email, password, "", "", "", "")
+	return s.RegisterWithVerification(ctx, email, password, "", "", "")
 }
 
 // RegisterWithVerification 用户注册（支持邮件验证、优惠码、邀请码和邀请返利码），返回token和用户。
-func (s *AuthService) RegisterWithVerification(ctx context.Context, email, password, verifyCode, promoCode, invitationCode, affiliateCode string) (string, *User, error) {
+// affiliateCode 使用可选参数以兼容旧调用方。
+func (s *AuthService) RegisterWithVerification(ctx context.Context, email, password, verifyCode, promoCode, invitationCode string, affiliateCode ...string) (string, *User, error) {
+	affiliateCodeRaw := ""
+	if len(affiliateCode) > 0 {
+		affiliateCodeRaw = affiliateCode[0]
+	}
+
 	// 检查是否开放注册（默认关闭：settingService 未配置时不允许注册）
 	if s.settingService == nil || !s.settingService.IsRegistrationEnabled(ctx) {
 		return "", nil, ErrRegDisabled
@@ -226,39 +248,21 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 	}
 	s.postAuthUserBootstrap(ctx, user, "email", true)
 	s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
-	if s.affiliateService != nil {
-		if _, err := s.affiliateService.EnsureUserAffiliate(ctx, user.ID); err != nil {
-			logger.LegacyPrintf("service.auth", "[Auth] Failed to initialize affiliate profile for user %d: %v", user.ID, err)
-		}
-		if code := strings.TrimSpace(affiliateCode); code != "" {
-			if err := s.affiliateService.BindInviterByCode(ctx, user.ID, code); err != nil {
-				// 邀请返利码绑定失败不影响注册，只记录日志
-				logger.LegacyPrintf("service.auth", "[Auth] Failed to bind affiliate inviter for user %d: %v", user.ID, err)
-			}
-		}
-	}
-
-	// 标记邀请码为已使用（如果使用了邀请码）
+	s.bootstrapAffiliateProfile(ctx, user.ID, affiliateCodeRaw)
 	if invitationRedeemCode != nil {
 		if err := s.redeemRepo.Use(ctx, invitationRedeemCode.ID, user.ID); err != nil {
-			// 邀请码标记失败不影响注册，只记录日志
 			logger.LegacyPrintf("service.auth", "[Auth] Failed to mark invitation code as used for user %d: %v", user.ID, err)
 		}
 	}
-	// 应用优惠码（如果提供且功能已启用）
 	if promoCode != "" && s.promoService != nil && s.settingService != nil && s.settingService.IsPromoCodeEnabled(ctx) {
 		if err := s.promoService.ApplyPromoCode(ctx, user.ID, promoCode); err != nil {
-			// 优惠码应用失败不影响注册，只记录日志
 			logger.LegacyPrintf("service.auth", "[Auth] Failed to apply promo code for user %d: %v", user.ID, err)
 		} else {
-			// 重新获取用户信息以获取更新后的余额
 			if updatedUser, err := s.userRepo.GetByID(ctx, user.ID); err == nil {
 				user = updatedUser
 			}
 		}
 	}
-
-	// 生成token
 	token, err := s.GenerateToken(user)
 	if err != nil {
 		return "", nil, fmt.Errorf("generate token: %w", err)
@@ -569,6 +573,8 @@ func (s *AuthService) LoginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 		return nil, nil, errors.New("refresh token cache not configured")
 	}
 
+	affiliateCodeRaw := affiliateCodeFromContext(ctx)
+
 	email = strings.TrimSpace(email)
 	if email == "" || len(email) > 255 {
 		return nil, nil, infraerrors.BadRequest("INVALID_EMAIL", "invalid email")
@@ -666,6 +672,7 @@ func (s *AuthService) LoginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 					user = newUser
 					s.postAuthUserBootstrap(ctx, user, signupSource, false)
 					s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
+					s.bootstrapAffiliateProfile(ctx, user.ID, affiliateCodeRaw)
 				}
 			} else {
 				if err := s.userRepo.Create(ctx, newUser); err != nil {
@@ -683,6 +690,7 @@ func (s *AuthService) LoginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 					user = newUser
 					s.postAuthUserBootstrap(ctx, user, signupSource, false)
 					s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
+					s.bootstrapAffiliateProfile(ctx, user.ID, affiliateCodeRaw)
 					if invitationRedeemCode != nil {
 						if err := s.redeemRepo.Use(ctx, invitationRedeemCode.ID, user.ID); err != nil {
 							return nil, nil, ErrInvitationCodeInvalid

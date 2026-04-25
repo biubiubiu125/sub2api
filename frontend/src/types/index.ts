@@ -125,26 +125,123 @@ export interface RegisterRequest {
   aff_code?: string
 }
 
-export interface AffiliateInvitee {
+export interface CustomAffiliate {
+  id: number
   user_id: number
-  email: string
-  username: string
-  created_at?: string
+  email?: string
+  username?: string
+  invite_code: string
+  status: 'pending' | 'approved' | 'rejected' | 'disabled'
+  source_type: string
+  rate_override?: number | null
+  acquisition_enabled: boolean
+  settlement_enabled: boolean
+  withdrawal_enabled: boolean
+  risk_reason?: string
+  risk_note?: string
+  approved_at?: string | null
+  disabled_at?: string | null
 }
 
-export interface UserAffiliateDetail {
-  user_id: number
-  aff_code: string
-  inviter_id?: number | null
-  aff_count: number
-  aff_quota: number
-  aff_history_quota: number
-  invitees: AffiliateInvitee[]
+export interface CustomReferralSummary {
+  status: 'pending' | 'approved' | 'rejected' | 'disabled'
+  invite_code: string
+  rate?: number | null
+  click_count: number
+  bound_user_count: number
+  paid_user_count: number
+  pending_amount: number
+  available_amount: number
+  frozen_amount: number
+  withdrawn_amount: number
+  reversed_amount: number
+  debt_amount: number
+  acquisition_enabled: boolean
+  settlement_enabled: boolean
+  withdrawal_enabled: boolean
 }
 
-export interface AffiliateTransferResponse {
-  transferred_quota: number
-  balance: number
+export interface CustomReferralCommission {
+  id: number
+  affiliate_id: number
+  affiliate_user_id: number
+  order_id: number
+  order_type: string
+  base_amount: number
+  rate: number
+  commission_amount: number
+  refunded_amount: number
+  status: 'pending' | 'available' | 'reversed'
+  settle_at: string
+  available_at?: string | null
+  reversed_at?: string | null
+  reversed_reason: string
+  created_at: string
+}
+
+export interface CustomReferralWithdrawal {
+  id: number
+  affiliate_id: number
+  affiliate_user_id: number
+  affiliate_email?: string
+  invite_code?: string
+  amount: number
+  fee_amount: number
+  net_amount: number
+  account_type: 'alipay' | 'wechat' | 'usdt' | string
+  account_name: string
+  account_no: string
+  account_network: string
+  qr_image_url: string
+  contact_info: string
+  applicant_note: string
+  admin_note: string
+  payment_proof_url: string
+  payment_txn_no: string
+  status: 'pending' | 'approved' | 'paid' | 'rejected' | 'canceled'
+  submitted_at: string
+  approved_at?: string | null
+  payout_deadline_at?: string | null
+  paid_at?: string | null
+  rejected_at?: string | null
+  canceled_at?: string | null
+  reject_reason: string
+}
+
+export interface CustomReferralAdminOverview {
+  total_affiliates: number
+  approved_affiliates: number
+  disabled_affiliates: number
+  pending_amount: number
+  available_amount: number
+  frozen_amount: number
+  withdrawn_amount: number
+  referral_click_count: number
+  bound_user_count: number
+  effective_paid_user_count: number
+}
+
+export interface CustomReferralAdminConfig {
+  provider: 'custom' | 'upstream' | 'disabled' | string
+  cookie_ttl_days: number
+  default_rate: number
+  has_default_rate: boolean
+  settle_freeze_days: number
+  min_withdraw_amount: number
+  withdraw_fee: number
+}
+
+export interface CustomReferralSettlementBatch {
+  id: number
+  batch_no: string
+  status: string
+  started_at: string
+  finished_at?: string | null
+  scanned_count: number
+  settled_count: number
+  skipped_count: number
+  failed_count: number
+  error_summary: string
 }
 
 export interface SendVerifyCodeRequest {

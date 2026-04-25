@@ -26,12 +26,12 @@
         </div>
         <div class="shrink-0 text-right">
           <div class="flex items-baseline gap-1">
-            <span class="text-xs text-gray-400 dark:text-dark-500">$</span>
+            <span class="text-xs text-gray-400 dark:text-dark-500">{{ priceSymbol }}</span>
             <span :class="['text-2xl font-extrabold tracking-tight', textClass]">{{ plan.price }}</span>
           </div>
           <span class="text-[11px] text-gray-400 dark:text-dark-500">/ {{ validitySuffix }}</span>
           <div v-if="plan.original_price" class="mt-0.5 flex items-center justify-end gap-1.5">
-            <span class="text-xs text-gray-400 line-through dark:text-dark-500">${{ plan.original_price }}</span>
+            <span class="text-xs text-gray-400 line-through dark:text-dark-500">{{ priceSymbol }}{{ plan.original_price }}</span>
             <span :class="['rounded px-1 py-0.5 text-[10px] font-semibold', discountClass]">{{ discountText }}</span>
           </div>
         </div>
@@ -128,6 +128,7 @@ const iconClass = computed(() => platformIconClass(platform.value))
 const btnClass = computed(() => platformButtonClass(platform.value))
 const discountClass = computed(() => platformDiscountClass(platform.value))
 const pLabel = computed(() => platformLabel(platform.value))
+const priceSymbol = '\u00A5'
 
 const discountText = computed(() => {
   if (!props.plan.original_price || props.plan.original_price <= 0) return ''
@@ -140,16 +141,19 @@ const rateDisplay = computed(() => {
   return `×${Number(rate.toPrecision(10))}`
 })
 
-const MODEL_SCOPE_LABELS: Record<string, string> = {
-  claude: 'Claude',
-  gemini_text: 'Gemini',
-  gemini_image: 'Imagen',
+const PLATFORM_MODEL_LABELS: Record<string, string[]> = {
+  openai: ['Codex'],
+  anthropic: ['Claude'],
+  gemini: ['Gemini'],
 }
 
 const modelScopeLabels = computed(() => {
+  const platformLabels = PLATFORM_MODEL_LABELS[platform.value]
+  if (platformLabels) return platformLabels
+
   const scopes = props.plan.supported_model_scopes
   if (!scopes || scopes.length === 0) return []
-  return scopes.map(s => MODEL_SCOPE_LABELS[s] || s)
+  return scopes
 })
 
 const validitySuffix = computed(() => {

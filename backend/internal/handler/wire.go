@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler/admin"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -37,6 +38,7 @@ func ProvideAdminHandlers(
 	channelMonitorHandler *admin.ChannelMonitorHandler,
 	channelMonitorTemplateHandler *admin.ChannelMonitorRequestTemplateHandler,
 	paymentHandler *admin.PaymentHandler,
+	referralHandler *admin.ReferralHandler,
 ) *AdminHandlers {
 	return &AdminHandlers{
 		Dashboard:              dashboardHandler,
@@ -67,7 +69,23 @@ func ProvideAdminHandlers(
 		ChannelMonitor:         channelMonitorHandler,
 		ChannelMonitorTemplate: channelMonitorTemplateHandler,
 		Payment:                paymentHandler,
+		Referral:               referralHandler,
 	}
+}
+
+func ProvideAuthHandler(
+	cfg *config.Config,
+	authService *service.AuthService,
+	userService *service.UserService,
+	settingService *service.SettingService,
+	promoService *service.PromoService,
+	redeemService *service.RedeemService,
+	totpService *service.TotpService,
+	customReferralService *service.CustomReferralService,
+) *AuthHandler {
+	handler := NewAuthHandler(cfg, authService, userService, settingService, promoService, redeemService, totpService)
+	handler.SetCustomReferralService(customReferralService)
+	return handler
 }
 
 // ProvideSystemHandler creates admin.SystemHandler with UpdateService
@@ -78,6 +96,15 @@ func ProvideSystemHandler(updateService *service.UpdateService, lockService *ser
 // ProvideSettingHandler creates SettingHandler with version from BuildInfo
 func ProvideSettingHandler(settingService *service.SettingService, buildInfo BuildInfo) *SettingHandler {
 	return NewSettingHandler(settingService, buildInfo.Version)
+}
+
+func ProvideUserHandler(
+	userService *service.UserService,
+	authService *service.AuthService,
+	emailService *service.EmailService,
+	emailCache service.EmailCache,
+) *UserHandler {
+	return NewUserHandler(userService, authService, emailService, emailCache)
 }
 
 // ProvideHandlers creates the Handlers struct
@@ -98,6 +125,7 @@ func ProvideHandlers(
 	paymentHandler *PaymentHandler,
 	paymentWebhookHandler *PaymentWebhookHandler,
 	availableChannelHandler *AvailableChannelHandler,
+	referralHandler *ReferralHandler,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
 ) *Handlers {
@@ -118,14 +146,15 @@ func ProvideHandlers(
 		Payment:          paymentHandler,
 		PaymentWebhook:   paymentWebhookHandler,
 		AvailableChannel: availableChannelHandler,
+		Referral:         referralHandler,
 	}
 }
 
 // ProviderSet is the Wire provider set for all handlers
 var ProviderSet = wire.NewSet(
 	// Top-level handlers
-	NewAuthHandler,
-	NewUserHandler,
+	ProvideAuthHandler,
+	ProvideUserHandler,
 	NewAPIKeyHandler,
 	NewUsageHandler,
 	NewRedeemHandler,
@@ -139,6 +168,7 @@ var ProviderSet = wire.NewSet(
 	NewPaymentHandler,
 	NewPaymentWebhookHandler,
 	NewAvailableChannelHandler,
+	NewReferralHandler,
 
 	// Admin handlers
 	admin.NewDashboardHandler,
@@ -169,6 +199,7 @@ var ProviderSet = wire.NewSet(
 	admin.NewChannelMonitorHandler,
 	admin.NewChannelMonitorRequestTemplateHandler,
 	admin.NewPaymentHandler,
+	admin.NewReferralHandler,
 
 	// AdminHandlers and Handlers constructors
 	ProvideAdminHandlers,

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
+	"github.com/Wei-Shaw/sub2api/internal/setup"
 	"github.com/gin-gonic/gin"
 )
 
@@ -70,7 +71,7 @@ func NewFrontendServer(settingsProvider PublicSettingsProvider) (*FrontendServer
 		baseHTML:    baseHTML,
 		cache:       cache,
 		settings:    settingsProvider,
-		overrideDir: filepath.Join("data", "public"),
+		overrideDir: filepath.Join(setup.GetDataDir(), "public"),
 	}, nil
 }
 
@@ -251,7 +252,7 @@ func ServeEmbeddedFrontend() gin.HandlerFunc {
 		panic("failed to get dist subdirectory: " + err.Error())
 	}
 	fileServer := http.FileServer(http.FS(distFS))
-	overrideDir := filepath.Join("data", "public")
+	overrideDir := filepath.Join(setup.GetDataDir(), "public")
 
 	return func(c *gin.Context) {
 		path := c.Request.URL.Path
@@ -303,6 +304,7 @@ func shouldBypassEmbeddedFrontend(path string) bool {
 		strings.HasPrefix(trimmed, "/v1beta/") ||
 		strings.HasPrefix(trimmed, "/backend-api/") ||
 		strings.HasPrefix(trimmed, "/antigravity/") ||
+		strings.HasPrefix(trimmed, "/referral-assets/") ||
 		strings.HasPrefix(trimmed, "/setup/") ||
 		trimmed == "/health" ||
 		trimmed == "/responses" ||
