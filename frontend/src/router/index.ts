@@ -7,8 +7,10 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
+import { useReferralStore } from '@/stores/referral'
 import { useNavigationLoadingState } from '@/composables/useNavigationLoading'
 import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
+import { captureAffiliateCodeFromQuery } from '@/utils/affiliateCookie'
 import { resolveDocumentTitle } from './title'
 
 /**
@@ -199,14 +201,46 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/affiliate',
-    name: 'Affiliate',
-    component: () => import('@/views/user/AffiliateView.vue'),
+    name: 'ReferralCenter',
+    component: () => import('@/views/user/ReferralCenterView.vue'),
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
-      title: 'Affiliate',
-      titleKey: 'affiliate.title',
-      descriptionKey: 'affiliate.description'
+      requiresReferral: true,
+      title: '推广中心'
+    }
+  },
+  {
+    path: '/affiliate/commissions',
+    name: 'ReferralCommissions',
+    component: () => import('@/views/user/ReferralCommissionsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      requiresReferral: true,
+      title: '佣金明细'
+    }
+  },
+  {
+    path: '/affiliate/withdraw',
+    name: 'ReferralWithdraw',
+    component: () => import('@/views/user/ReferralWithdrawApplyView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      requiresReferral: true,
+      title: '提现申请'
+    }
+  },
+  {
+    path: '/affiliate/withdrawals',
+    name: 'ReferralWithdrawals',
+    component: () => import('@/views/user/ReferralWithdrawalsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      requiresReferral: true,
+      title: '提现记录'
     }
   },
   {
@@ -335,6 +369,10 @@ const routes: RouteRecordRaw[] = [
     redirect: '/admin/dashboard'
   },
   {
+    path: '/admin/referral',
+    redirect: '/admin/referral/overview'
+  },
+  {
     path: '/admin/dashboard',
     name: 'AdminDashboard',
     component: () => import('@/views/admin/DashboardView.vue'),
@@ -344,6 +382,66 @@ const routes: RouteRecordRaw[] = [
       title: 'Admin Dashboard',
       titleKey: 'admin.dashboard.title',
       descriptionKey: 'admin.dashboard.description'
+    }
+  },
+  {
+    path: '/admin/referral/overview',
+    name: 'AdminReferralOverview',
+    component: () => import('@/views/admin/referral/AdminReferralOverviewView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: '推广分佣概览'
+    }
+  },
+  {
+    path: '/admin/referral/settings',
+    name: 'AdminReferralSettings',
+    component: () => import('@/views/admin/referral/AdminReferralSettingsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: '推广分佣设置'
+    }
+  },
+  {
+    path: '/admin/referral/affiliates',
+    name: 'AdminReferralAffiliates',
+    component: () => import('@/views/admin/referral/AdminReferralAffiliatesView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: '推广员管理'
+    }
+  },
+  {
+    path: '/admin/referral/pending',
+    name: 'AdminReferralPending',
+    component: () => import('@/views/admin/referral/AdminReferralPendingView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: '待审核推广员'
+    }
+  },
+  {
+    path: '/admin/referral/commissions',
+    name: 'AdminReferralCommissions',
+    component: () => import('@/views/admin/referral/AdminReferralCommissionsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: '佣金流水'
+    }
+  },
+  {
+    path: '/admin/referral/withdrawals',
+    name: 'AdminReferralWithdrawals',
+    component: () => import('@/views/admin/referral/AdminReferralWithdrawalsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: '提现审核'
     }
   },
   {
@@ -619,7 +717,8 @@ function isBackendModePublicRouteAllowed(path: string, hasPendingAuthSession: bo
   return false
 }
 
-router.beforeEach((to, _from, next) => {
+router.beforeEach(async (to, _from, next) => {
+  captureAffiliateCodeFromQuery(to.query as Record<string, unknown>)
   // 开始导航加载状态
   navigationLoading.startNavigation()
 
@@ -653,6 +752,7 @@ router.beforeEach((to, _from, next) => {
   // Check if route requires authentication
   const requiresAuth = to.meta.requiresAuth !== false // Default to true
   const requiresAdmin = to.meta.requiresAdmin === true
+  const requiresReferral = to.meta.requiresReferral === true
 
   // If route doesn't require auth, allow access
   if (!requiresAuth) {
@@ -695,6 +795,15 @@ router.beforeEach((to, _from, next) => {
     // User is authenticated but not admin, redirect to user dashboard
     next('/dashboard')
     return
+  }
+
+  if (requiresReferral) {
+    const referralStore = useReferralStore()
+    await referralStore.ensureLoaded()
+    if (!referralStore.canAccess) {
+      next('/dashboard')
+      return
+    }
   }
 
 

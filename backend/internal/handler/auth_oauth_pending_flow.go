@@ -67,6 +67,7 @@ type createPendingOAuthAccountRequest struct {
 	VerifyCode       string `json:"verify_code,omitempty"`
 	Password         string `json:"password" binding:"required,min=6"`
 	InvitationCode   string `json:"invitation_code,omitempty"`
+	AffCode          string `json:"aff_code,omitempty"`
 	AdoptDisplayName *bool  `json:"adopt_display_name,omitempty"`
 	AdoptAvatar      *bool  `json:"adopt_avatar,omitempty"`
 }
@@ -1605,6 +1606,7 @@ func (h *AuthHandler) bindPendingOAuthLogin(c *gin.Context, provider string) {
 	}
 
 	clearCookies()
+	h.clearCustomReferralCookie(c)
 	writeOAuthTokenPairResponse(c, tokenPair)
 }
 
@@ -1671,8 +1673,10 @@ func (h *AuthHandler) createPendingOAuthAccount(c *gin.Context, provider string)
 		return
 	}
 
+	registerCtx := service.ContextWithAffiliateCode(c.Request.Context(), h.resolveAffiliateCode(c, req.AffCode))
+
 	tokenPair, user, err := h.authService.RegisterOAuthEmailAccount(
-		c.Request.Context(),
+		registerCtx,
 		email,
 		req.Password,
 		strings.TrimSpace(req.VerifyCode),
@@ -1746,8 +1750,9 @@ func (h *AuthHandler) createPendingOAuthAccount(c *gin.Context, provider string)
 		return
 	}
 
+	finalizeCtx := service.ContextWithAffiliateCode(txCtx, h.resolveAffiliateCode(c, req.AffCode))
 	if err := h.authService.FinalizeOAuthEmailAccount(
-		txCtx,
+		finalizeCtx,
 		user,
 		strings.TrimSpace(req.InvitationCode),
 		strings.TrimSpace(session.ProviderType),
@@ -1791,6 +1796,7 @@ func (h *AuthHandler) createPendingOAuthAccount(c *gin.Context, provider string)
 
 	h.authService.RecordSuccessfulLogin(c.Request.Context(), user.ID)
 	clearCookies()
+	h.clearCustomReferralCookie(c)
 	writeOAuthTokenPairResponse(c, tokenPair)
 }
 
@@ -1940,5 +1946,6 @@ func (h *AuthHandler) ExchangePendingOAuthCompletion(c *gin.Context) {
 	}
 
 	clearCookies()
+	h.clearCustomReferralCookie(c)
 	response.Success(c, payload)
 }

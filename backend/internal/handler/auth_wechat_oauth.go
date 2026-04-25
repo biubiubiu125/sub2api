@@ -481,6 +481,7 @@ func (h *AuthHandler) wechatPaymentResumeService() *service.PaymentResumeService
 
 type completeWeChatOAuthRequest struct {
 	InvitationCode   string `json:"invitation_code" binding:"required"`
+	AffCode          string `json:"aff_code,omitempty"`
 	AdoptDisplayName *bool  `json:"adopt_display_name,omitempty"`
 	AdoptAvatar      *bool  `json:"adopt_avatar,omitempty"`
 }
@@ -547,7 +548,8 @@ func (h *AuthHandler) CompleteWeChatOAuthRegistration(c *gin.Context) {
 		return
 	}
 
-	tokenPair, user, err := h.authService.LoginOrRegisterOAuthWithTokenPair(c.Request.Context(), email, username, req.InvitationCode)
+	loginCtx := service.ContextWithAffiliateCode(c.Request.Context(), h.resolveAffiliateCode(c, req.AffCode))
+	tokenPair, user, err := h.authService.LoginOrRegisterOAuthWithTokenPair(loginCtx, email, username, req.InvitationCode)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -573,6 +575,7 @@ func (h *AuthHandler) CompleteWeChatOAuthRegistration(c *gin.Context) {
 	}
 	clearOAuthPendingSessionCookie(c, secureCookie)
 	clearOAuthPendingBrowserCookie(c, secureCookie)
+	h.clearCustomReferralCookie(c)
 
 	c.JSON(http.StatusOK, gin.H{
 		"access_token":  tokenPair.AccessToken,

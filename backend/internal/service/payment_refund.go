@@ -383,8 +383,34 @@ func (s *PaymentService) markRefundOk(ctx context.Context, p *RefundPlan) (*Refu
 	if err != nil {
 		return nil, fmt.Errorf("mark refund: %w", err)
 	}
+	s.applyCustomReferralRefundForOrder(ctx, p)
 	s.writeAuditLog(ctx, p.OrderID, "REFUND_SUCCESS", "admin", map[string]any{"refundAmount": p.RefundAmount, "reason": p.Reason, "balanceDeducted": p.BalanceToDeduct, "force": p.Force})
 	return &RefundResult{Success: true, BalanceDeducted: p.BalanceToDeduct, SubDaysDeducted: p.SubDaysToDeduct}, nil
+}
+
+func (s *PaymentService) applyCustomReferralRefundForOrder(ctx context.Context, p *RefundPlan) {
+	if s == nil || s.customReferralService == nil || p == nil || p.Order == nil || p.RefundAmount <= 0 {
+		return
+	}
+	reversed, err := s.customReferralService.ReverseCommissionForRefund(ctx, CustomReferralRefundInput{
+		OrderID:      p.OrderID,
+		RefundAmount: p.RefundAmount,
+		Reason:       strings.TrimSpace(p.Reason),
+		RefundedAt:   time.Now(),
+	})
+	if err != nil {
+		s.writeAuditLog(ctx, p.OrderID, "CUSTOM_REFERRAL_REFUND_FAILED", "system", map[string]any{
+			"error": err.Error(),
+		})
+		return
+	}
+	if reversed <= 0 {
+		return
+	}
+	s.writeAuditLog(ctx, p.OrderID, "CUSTOM_REFERRAL_COMMISSION_REVERSED", "system", map[string]any{
+		"refundAmount":   p.RefundAmount,
+		"reversedAmount": reversed,
+	})
 }
 
 func (s *PaymentService) RollbackRefund(ctx context.Context, p *RefundPlan, gErr error) bool {

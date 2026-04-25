@@ -163,6 +163,7 @@ import {
 } from '@/api/auth'
 import { apiClient } from '@/api/client'
 import { buildAuthErrorMessage } from '@/utils/authError'
+import { getAffiliateReferralCode } from '@/utils/affiliateCookie'
 import {
   isRegistrationEmailSuffixAllowed,
   normalizeRegistrationEmailSuffixWhitelist
@@ -273,6 +274,9 @@ onMounted(async () => {
           }
         : null
       hasRegisterData.value = !!(email.value && password.value)
+      if (!affCode.value) {
+        affCode.value = getAffiliateReferralCode() || ''
+      }
     } catch {
       hasRegisterData.value = false
     }
@@ -501,6 +505,7 @@ async function handleVerify(): Promise<void> {
           password: password.value,
           verify_code: verifyCode.value.trim(),
           invitation_code: invitationCode.value || undefined,
+          ...(affCode.value ? { aff_code: affCode.value } : {}),
           adopt_display_name: pendingAdoptionDecision.value?.adoptDisplayName,
           adopt_avatar: pendingAdoptionDecision.value?.adoptAvatar
         }

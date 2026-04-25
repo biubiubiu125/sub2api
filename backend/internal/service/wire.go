@@ -403,7 +403,7 @@ func ProvideAuthService(
 	emailQueueService *EmailQueueService,
 	promoService *PromoService,
 	defaultSubAssigner DefaultSubscriptionAssigner,
-	affiliateService *AffiliateService,
+	customReferralService *CustomReferralService,
 ) *AuthService {
 	svc := NewAuthService(
 		entClient,
@@ -418,7 +418,7 @@ func ProvideAuthService(
 		promoService,
 		defaultSubAssigner,
 	)
-	svc.SetAffiliateService(affiliateService)
+	svc.SetCustomReferralService(customReferralService)
 	return svc
 }
 
@@ -431,10 +431,10 @@ func ProvidePaymentService(
 	configService *PaymentConfigService,
 	userRepo UserRepository,
 	groupRepo GroupRepository,
-	affiliateService *AffiliateService,
+	customReferralService *CustomReferralService,
 ) *PaymentService {
 	svc := NewPaymentService(entClient, registry, loadBalancer, redeemService, subscriptionSvc, configService, userRepo, groupRepo)
-	svc.SetAffiliateService(affiliateService)
+	svc.SetCustomReferralService(customReferralService)
 	return svc
 }
 
@@ -504,6 +504,8 @@ var ProviderSet = wire.NewSet(
 	NewTurnstileService,
 	NewSubscriptionService,
 	wire.Bind(new(DefaultSubscriptionAssigner), new(*SubscriptionService)),
+	NewCustomReferralService,
+	NewReferralAssetService,
 	ProvideConcurrencyService,
 	ProvideUserMessageQueueService,
 	NewUsageRecordWorkerPool,
@@ -533,7 +535,6 @@ var ProviderSet = wire.NewSet(
 	NewGroupCapacityService,
 	NewChannelService,
 	NewModelPricingResolver,
-	NewAffiliateService,
 	ProvidePaymentConfigService,
 	ProvidePaymentService,
 	ProvidePaymentOrderExpiryService,

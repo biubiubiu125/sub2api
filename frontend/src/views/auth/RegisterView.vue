@@ -289,6 +289,7 @@ import {
   validateInvitationCode
 } from '@/api/auth'
 import { buildAuthErrorMessage } from '@/utils/authError'
+import { captureAffiliateCodeFromQuery, getAffiliateReferralCode } from '@/utils/affiliateCookie'
 import {
   isRegistrationEmailSuffixAllowed,
   normalizeRegistrationEmailSuffixWhitelist
@@ -407,10 +408,10 @@ onMounted(async () => {
         await validatePromoCodeDebounced(promoParam)
       }
     }
-    const affParam = (route.query.aff as string) || (route.query.aff_code as string)
-    if (affParam) {
-      formData.aff_code = affParam.trim()
-    }
+    formData.aff_code =
+      captureAffiliateCodeFromQuery(route.query as Record<string, unknown>)
+      || getAffiliateReferralCode()
+      || ''
   } catch (error) {
     console.error('Failed to load public settings:', error)
   } finally {

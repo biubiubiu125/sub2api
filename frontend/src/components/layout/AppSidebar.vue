@@ -183,7 +183,7 @@
 import { computed, h, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
+import { useAdminSettingsStore, useAppStore, useAuthStore, useOnboardingStore, useReferralStore } from '@/stores'
 import VersionBadge from '@/components/common/VersionBadge.vue'
 import { sanitizeSvg } from '@/utils/sanitize'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
@@ -230,6 +230,7 @@ const route = useRoute()
 const router = useRouter()
 const appStore = useAppStore()
 const authStore = useAuthStore()
+const referralStore = useReferralStore()
 const onboardingStore = useOnboardingStore()
 const adminSettingsStore = useAdminSettingsStore()
 
@@ -656,7 +657,6 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
     { path: '/purchase', label: t('nav.buySubscription'), icon: RechargeSubscriptionIcon, hideInSimpleMode: true, featureFlag: flagPayment },
     { path: '/orders', label: t('nav.myOrders'), icon: OrderListIcon, hideInSimpleMode: true, featureFlag: flagPayment },
     { path: '/redeem', label: t('nav.redeem'), icon: GiftIcon, hideInSimpleMode: true },
-    { path: '/affiliate', label: t('nav.affiliate'), icon: UsersIcon, hideInSimpleMode: true },
     { path: '/profile', label: t('nav.profile'), icon: UserIcon },
     ...customMenuItemsForUser.value.map((item): NavItem => ({
       path: `/custom/${item.id}`,
@@ -665,6 +665,14 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
       iconSvg: item.icon_svg,
     })),
   )
+  if (referralStore.canAccess) {
+    items.splice(items.findIndex(item => item.path === '/profile'), 0,
+      { path: '/affiliate', label: t('nav.referralCenter'), icon: UsersIcon, hideInSimpleMode: true },
+      { path: '/affiliate/commissions', label: t('nav.referralCommissions'), icon: ChartIcon, hideInSimpleMode: true },
+      { path: '/affiliate/withdraw', label: t('nav.referralWithdraw'), icon: CreditCardIcon, hideInSimpleMode: true },
+      { path: '/affiliate/withdrawals', label: t('nav.referralWithdrawals'), icon: OrderListIcon, hideInSimpleMode: true },
+    )
+  }
   return items
 }
 
@@ -716,6 +724,21 @@ const adminNavItems = computed((): NavItem[] => {
     },
     { path: '/admin/subscriptions', label: t('nav.subscriptions'), icon: CreditCardIcon, hideInSimpleMode: true },
     { path: '/admin/accounts', label: t('nav.accounts'), icon: GlobeIcon },
+    {
+      path: '/admin/referral',
+      label: t('nav.referralManagement'),
+      icon: UsersIcon,
+      hideInSimpleMode: true,
+      expandOnly: true,
+      children: [
+        { path: '/admin/referral/overview', label: t('nav.referralManagement'), icon: DashboardIcon },
+        { path: '/admin/referral/settings', label: t('nav.referralSettings'), icon: CogIcon },
+        { path: '/admin/referral/pending', label: t('nav.referralPending'), icon: BellIcon },
+        { path: '/admin/referral/affiliates', label: t('nav.referralAffiliates'), icon: UsersIcon },
+        { path: '/admin/referral/commissions', label: t('nav.referralCommissionLedger'), icon: ChartIcon },
+        { path: '/admin/referral/withdrawals', label: t('nav.referralWithdrawalReview'), icon: OrderListIcon },
+      ],
+    },
     { path: '/admin/announcements', label: t('nav.announcements'), icon: BellIcon },
     { path: '/admin/proxies', label: t('nav.proxies'), icon: ServerIcon },
     { path: '/admin/redeem', label: t('nav.redeemCodes'), icon: TicketIcon, hideInSimpleMode: true },
@@ -857,8 +880,22 @@ watch(
 onMounted(() => {
   if (isAdmin.value) {
     adminSettingsStore.fetch()
+  } else if (authStore.isAuthenticated) {
+    referralStore.ensureLoaded().catch(() => undefined)
   }
 })
+
+watch(
+  () => [authStore.isAuthenticated, authStore.user?.id, authStore.isAdmin] as const,
+  ([authenticated, userId, admin]) => {
+    if (!authenticated || !userId || admin) {
+      referralStore.clear()
+      return
+    }
+    referralStore.ensureLoaded().catch(() => undefined)
+  },
+  { immediate: true }
+)
 </script>
 
 <style scoped>

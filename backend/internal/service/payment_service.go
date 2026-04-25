@@ -170,18 +170,18 @@ type TopUserStat struct {
 // --- Service ---
 
 type PaymentService struct {
-	providerMu       sync.Mutex
-	providersLoaded  bool
-	entClient        *dbent.Client
-	registry         *payment.Registry
-	loadBalancer     payment.LoadBalancer
-	redeemService    *RedeemService
-	subscriptionSvc  *SubscriptionService
-	configService    *PaymentConfigService
-	userRepo         UserRepository
-	groupRepo        GroupRepository
-	resumeService    *PaymentResumeService
-	affiliateService *AffiliateService
+	providerMu            sync.Mutex
+	providersLoaded       bool
+	entClient             *dbent.Client
+	registry              *payment.Registry
+	loadBalancer          payment.LoadBalancer
+	redeemService         *RedeemService
+	subscriptionSvc       *SubscriptionService
+	configService         *PaymentConfigService
+	userRepo              UserRepository
+	groupRepo             GroupRepository
+	resumeService         *PaymentResumeService
+	customReferralService *CustomReferralService
 }
 
 func NewPaymentService(entClient *dbent.Client, registry *payment.Registry, loadBalancer payment.LoadBalancer, redeemService *RedeemService, subscriptionSvc *SubscriptionService, configService *PaymentConfigService, userRepo UserRepository, groupRepo GroupRepository) *PaymentService {
@@ -190,11 +190,11 @@ func NewPaymentService(entClient *dbent.Client, registry *payment.Registry, load
 	return svc
 }
 
-func (s *PaymentService) SetAffiliateService(affiliateService *AffiliateService) {
+func (s *PaymentService) SetCustomReferralService(customReferralService *CustomReferralService) {
 	if s == nil {
 		return
 	}
-	s.affiliateService = affiliateService
+	s.customReferralService = customReferralService
 }
 
 // --- Provider Registry ---

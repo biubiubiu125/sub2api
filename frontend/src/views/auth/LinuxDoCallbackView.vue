@@ -255,6 +255,7 @@ import {
   type OAuthTokenResponse,
   type PendingOAuthExchangeResponse
 } from '@/api/auth'
+import { getAffiliateReferralCode } from '@/utils/affiliateCookie'
 
 const route = useRoute()
 const router = useRouter()
@@ -627,17 +628,20 @@ async function handleSubmitInvitation() {
 
   isSubmitting.value = true
   try {
+    const affiliateCode = getAffiliateReferralCode()
     const completion: LinuxDoPendingActionResponse = legacyPendingOAuthToken.value
       ? (
           await apiClient.post<LinuxDoPendingActionResponse>('/auth/oauth/linuxdo/complete-registration', {
             pending_oauth_token: legacyPendingOAuthToken.value,
             invitation_code: invitationCode.value.trim(),
+            ...(affiliateCode ? { aff_code: affiliateCode } : {}),
             ...serializeAdoptionDecision(currentAdoptionDecision())
           })
         ).data
       : await completeLinuxDoOAuthRegistration(
           invitationCode.value.trim(),
-          currentAdoptionDecision()
+          currentAdoptionDecision(),
+          affiliateCode || undefined
         )
     await finalizePendingAccountResponse(completion)
   } catch (e: unknown) {
@@ -668,11 +672,13 @@ async function handleCreateAccount(payload: PendingOAuthCreateAccountPayload) {
 
   isSubmitting.value = true
   try {
+    const affiliateCode = getAffiliateReferralCode()
     const { data } = await apiClient.post<LinuxDoPendingActionResponse>('/auth/oauth/pending/create-account', {
       email: payload.email,
       password: payload.password,
       verify_code: payload.verifyCode || undefined,
       invitation_code: payload.invitationCode || undefined,
+      ...(affiliateCode ? { aff_code: affiliateCode } : {}),
       ...serializeAdoptionDecision(currentAdoptionDecision())
     })
     await finalizePendingAccountResponse(data)
