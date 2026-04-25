@@ -339,7 +339,7 @@ func (s *CustomReferralService) loadConfig(ctx context.Context) (*CustomReferral
 		}
 	}
 	if raw, err := s.settingRepo.GetValue(ctx, SettingKeyCustomReferralDefaultRate); err == nil {
-		if rate, parseErr := strconv.ParseFloat(strings.TrimSpace(raw), 64); parseErr == nil && rate >= 0 {
+		if rate, parseErr := strconv.ParseFloat(strings.TrimSpace(raw), 64); parseErr == nil && rate > 0 {
 			out.DefaultRate = rate
 			out.HasDefaultRate = true
 		}
@@ -490,6 +490,13 @@ func (s *CustomReferralService) GetDashboard(ctx context.Context, userID int64) 
 	if dashboard == nil || dashboard.Status == "" {
 		return nil, ErrCustomReferralPermissionDenied
 	}
+	if dashboard.Rate == nil {
+		cfg, cfgErr := s.loadConfig(ctx)
+		if cfgErr == nil && cfg.HasDefaultRate {
+			rate := cfg.DefaultRate
+			dashboard.Rate = &rate
+		}
+	}
 	return dashboard, nil
 }
 
@@ -623,6 +630,9 @@ func (s *CustomReferralService) UpdateConfig(ctx context.Context, input CustomRe
 	}
 	if input.DefaultRate < 0 || input.DefaultRate > 100 {
 		return nil, infraerrors.BadRequest("CUSTOM_REFERRAL_INVALID_DEFAULT_RATE", "default rate must be between 0 and 100")
+	}
+	if provider == CustomReferralProviderCustom && input.DefaultRate <= 0 {
+		return nil, ErrCustomReferralRateNotConfigured
 	}
 	if input.MinWithdrawAmount < 0 {
 		return nil, infraerrors.BadRequest("CUSTOM_REFERRAL_INVALID_MIN_WITHDRAW", "minimum withdraw amount must be non-negative")

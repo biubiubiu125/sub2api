@@ -257,11 +257,13 @@ function closeDialog(): void {
 }
 
 async function submitDialog(): Promise<void> {
-  if (!dialog.target || submitting.value) return
+  if (submitting.value) return
+  if (dialog.mode !== 'create' && !dialog.target) return
+  const target = dialog.target
   submitting.value = true
   try {
     if (dialog.mode === 'approve' || dialog.mode === 'create') {
-      const userId = dialog.mode === 'create' ? dialog.userId : dialog.target.user_id
+      const userId = dialog.mode === 'create' ? dialog.userId : target!.user_id
       if (!userId || userId <= 0) {
         appStore.showError('请填写有效的用户 ID')
         submitting.value = false
@@ -272,7 +274,7 @@ async function submitDialog(): Promise<void> {
       })
       appStore.showSuccess(dialog.mode === 'create' ? '推广员已开通' : '推广员已批准')
     } else {
-      await adminReferralAPI.disableAffiliate(dialog.target.user_id, {
+      await adminReferralAPI.disableAffiliate(target!.user_id, {
         reason: dialog.reason,
       })
       appStore.showSuccess('推广员已停用')
