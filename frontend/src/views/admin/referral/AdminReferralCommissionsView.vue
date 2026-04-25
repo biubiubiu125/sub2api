@@ -19,17 +19,18 @@
           <LoadingSpinner />
         </div>
         <div v-else-if="items.length === 0" class="px-6 py-12 text-center text-sm text-gray-500 dark:text-dark-400">
-          暂无佣金流水。
+          暂无产生佣金的订单记录。
         </div>
         <div v-else class="overflow-x-auto">
-          <table class="w-full min-w-[900px] text-left text-sm">
+          <table class="w-full min-w-[1120px] text-left text-sm">
             <thead>
               <tr class="border-b border-gray-200 bg-gray-50 text-gray-500 dark:border-dark-700 dark:bg-dark-900 dark:text-dark-400">
-                <th class="px-4 py-3 font-medium">推广员</th>
-                <th class="px-4 py-3 font-medium">订单ID</th>
+                <th class="px-4 py-3 font-medium">推广员账号</th>
+                <th class="px-4 py-3 font-medium">付费用户</th>
+                <th class="px-4 py-3 font-medium">订单 ID</th>
                 <th class="px-4 py-3 font-medium">订单类型</th>
-                <th class="px-4 py-3 font-medium">返佣基数</th>
-                <th class="px-4 py-3 font-medium">比例</th>
+                <th class="px-4 py-3 font-medium">有效付费金额</th>
+                <th class="px-4 py-3 font-medium">佣金比例</th>
                 <th class="px-4 py-3 font-medium">佣金金额</th>
                 <th class="px-4 py-3 font-medium">状态</th>
                 <th class="px-4 py-3 font-medium">创建时间</th>
@@ -37,13 +38,19 @@
             </thead>
             <tbody>
               <tr v-for="item in items" :key="item.id" class="border-b border-gray-100 last:border-b-0 dark:border-dark-800">
-                <td class="px-4 py-3 text-gray-700 dark:text-gray-300">#{{ item.affiliate_user_id }}</td>
+                <td class="px-4 py-3 text-gray-700 dark:text-gray-300">{{ item.affiliate_email || `#${item.affiliate_user_id}` }}</td>
+                <td class="px-4 py-3 text-gray-700 dark:text-gray-300">
+                  <div>{{ item.invitee_email || `#${item.invitee_user_id}` }}</div>
+                  <div class="text-xs text-gray-500 dark:text-dark-400">{{ item.invitee_username || '-' }}</div>
+                </td>
                 <td class="px-4 py-3 font-mono text-gray-700 dark:text-gray-300">{{ item.order_id }}</td>
                 <td class="px-4 py-3 text-gray-700 dark:text-gray-300">{{ orderTypeLabel(item.order_type) }}</td>
                 <td class="px-4 py-3 text-gray-700 dark:text-gray-300">{{ formatMoney(item.base_amount) }}</td>
                 <td class="px-4 py-3 text-gray-700 dark:text-gray-300">{{ item.rate }}%</td>
                 <td class="px-4 py-3 font-medium text-gray-900 dark:text-white">{{ formatMoney(item.commission_amount) }}</td>
-                <td class="px-4 py-3"><span :class="statusClass(item.status)" class="rounded-full px-2.5 py-1 text-xs font-medium">{{ statusLabel(item.status) }}</span></td>
+                <td class="px-4 py-3">
+                  <span :class="statusClass(item.status)" class="rounded-full px-2.5 py-1 text-xs font-medium">{{ statusLabel(item.status) }}</span>
+                </td>
                 <td class="px-4 py-3 text-gray-700 dark:text-gray-300">{{ formatDateTime(item.created_at) }}</td>
               </tr>
             </tbody>
@@ -122,7 +129,7 @@ async function loadItems(): Promise<void> {
     items.value = data.items || []
     pagination.total = data.total || 0
   } catch (error) {
-    appStore.showError(extractApiErrorMessage(error, '加载佣金流水失败'))
+    appStore.showError(extractApiErrorMessage(error, '加载佣金订单记录失败'))
   } finally {
     loading.value = false
   }

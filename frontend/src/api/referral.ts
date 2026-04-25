@@ -9,11 +9,10 @@ import type {
 export interface ReferralWithdrawalCreateRequest {
   amount: number
   account_type: string
-  account_name: string
+  account_name?: string
   account_no: string
   account_network?: string
   qr_image_url?: string
-  contact_info?: string
   applicant_note?: string
 }
 

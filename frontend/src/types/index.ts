@@ -134,6 +134,12 @@ export interface CustomAffiliate {
   status: 'pending' | 'approved' | 'rejected' | 'disabled'
   source_type: string
   rate_override?: number | null
+  click_count: number
+  bound_user_count: number
+  paid_user_count: number
+  pending_amount: number
+  available_amount: number
+  withdrawn_amount: number
   acquisition_enabled: boolean
   settlement_enabled: boolean
   withdrawal_enabled: boolean
@@ -165,7 +171,11 @@ export interface CustomReferralCommission {
   id: number
   affiliate_id: number
   affiliate_user_id: number
+  affiliate_email?: string
   order_id: number
+  invitee_user_id: number
+  invitee_email?: string
+  invitee_username?: string
   order_type: string
   base_amount: number
   rate: number
@@ -242,6 +252,14 @@ export interface CustomReferralSettlementBatch {
   skipped_count: number
   failed_count: number
   error_summary: string
+}
+
+export interface CustomReferralBindingDetail {
+  id: number
+  invitee_user_id: number
+  invitee_email?: string
+  invitee_name?: string
+  bound_at: string
 }
 
 export interface SendVerifyCodeRequest {

@@ -3,6 +3,7 @@ import type {
   CustomAffiliate,
   CustomReferralAdminConfig,
   CustomReferralAdminOverview,
+  CustomReferralBindingDetail,
   CustomReferralCommission,
   CustomReferralSettlementBatch,
   CustomReferralWithdrawal,
@@ -61,6 +62,11 @@ async function restoreAffiliate(userId: number): Promise<CustomAffiliate> {
   return data
 }
 
+async function adjustAffiliate(userId: number, payload: { amount: number; remark?: string }): Promise<CustomAffiliate> {
+  const { data } = await apiClient.post<CustomAffiliate>(`/admin/referral/affiliates/${userId}/adjust`, payload)
+  return data
+}
+
 async function freezeSettlement(userId: number, payload?: { reason?: string }): Promise<CustomAffiliate> {
   const { data } = await apiClient.post<CustomAffiliate>(`/admin/referral/affiliates/${userId}/settlement/freeze`, payload ?? {})
   return data
@@ -85,6 +91,7 @@ async function listCommissions(params?: {
   page?: number
   page_size?: number
   status?: string
+  affiliate_user_id?: number
 }): Promise<PaginatedResponse<CustomReferralCommission>> {
   const { data } = await apiClient.get<PaginatedResponse<CustomReferralCommission>>('/admin/referral/commissions', { params })
   return data
@@ -99,8 +106,17 @@ async function listWithdrawals(params?: {
   page?: number
   page_size?: number
   status?: string
+  affiliate_user_id?: number
 }): Promise<PaginatedResponse<CustomReferralWithdrawal>> {
   const { data } = await apiClient.get<PaginatedResponse<CustomReferralWithdrawal>>('/admin/referral/withdrawals', { params })
+  return data
+}
+
+async function listAffiliateBindings(userId: number, params?: {
+  page?: number
+  page_size?: number
+}): Promise<PaginatedResponse<CustomReferralBindingDetail>> {
+  const { data } = await apiClient.get<PaginatedResponse<CustomReferralBindingDetail>>(`/admin/referral/affiliates/${userId}/bindings`, { params })
   return data
 }
 
@@ -139,6 +155,7 @@ export const adminReferralAPI = {
   rejectAffiliate,
   disableAffiliate,
   restoreAffiliate,
+  adjustAffiliate,
   freezeSettlement,
   restoreSettlement,
   freezeWithdrawal,
@@ -146,6 +163,7 @@ export const adminReferralAPI = {
   listCommissions,
   runSettlementBatch,
   listWithdrawals,
+  listAffiliateBindings,
   approveWithdrawal,
   rejectWithdrawal,
   markWithdrawalPaid,

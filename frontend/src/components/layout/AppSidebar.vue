@@ -668,9 +668,6 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
   if (referralStore.canAccess) {
     items.splice(items.findIndex(item => item.path === '/profile'), 0,
       { path: '/affiliate', label: t('nav.referralCenter'), icon: UsersIcon, hideInSimpleMode: true },
-      { path: '/affiliate/commissions', label: t('nav.referralCommissions'), icon: ChartIcon, hideInSimpleMode: true },
-      { path: '/affiliate/withdraw', label: t('nav.referralWithdraw'), icon: CreditCardIcon, hideInSimpleMode: true },
-      { path: '/affiliate/withdrawals', label: t('nav.referralWithdrawals'), icon: OrderListIcon, hideInSimpleMode: true },
     )
   }
   return items

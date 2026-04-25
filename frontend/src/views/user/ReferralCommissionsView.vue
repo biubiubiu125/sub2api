@@ -1,6 +1,8 @@
 <template>
   <AppLayout>
     <div class="space-y-4">
+      <ReferralNavTabs />
+
       <div class="card p-4">
         <div class="flex flex-wrap items-center gap-3">
           <div class="w-full sm:w-40">
@@ -30,7 +32,7 @@
                 <th class="px-4 py-3 font-medium">返佣比例</th>
                 <th class="px-4 py-3 font-medium">佣金金额</th>
                 <th class="px-4 py-3 font-medium">状态</th>
-                <th class="px-4 py-3 font-medium">结算时间</th>
+                <th class="px-4 py-3 font-medium">预计结算时间</th>
                 <th class="px-4 py-3 font-medium">创建时间</th>
               </tr>
             </thead>
@@ -69,6 +71,7 @@ import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
+import ReferralNavTabs from '@/components/referral/ReferralNavTabs.vue'
 import { referralAPI } from '@/api/referral'
 import type { CustomReferralCommission } from '@/types'
 import { useAppStore } from '@/stores/app'
@@ -89,7 +92,7 @@ const statusOptions = computed(() => [
 ])
 
 function formatMoney(value: number): string {
-  return `¥${value.toFixed(2)}`
+  return `￥${value.toFixed(2)}`
 }
 
 function orderTypeLabel(value: string): string {

@@ -21,6 +21,23 @@ interface ApiErrorLike {
   }
 }
 
+const builtInErrorMap: Record<string, string> = {
+  CUSTOM_REFERRAL_WITHDRAW_ACCOUNT_REQUIRED: '请填写收款账号',
+  CUSTOM_REFERRAL_WITHDRAW_INSUFFICIENT: '可提现佣金不足',
+  CUSTOM_REFERRAL_WITHDRAW_TOO_SMALL: '提现金额未达到最低提现门槛',
+  CUSTOM_REFERRAL_INVALID_WITHDRAW_NETWORK: '请选择正确的链类型',
+  CUSTOM_REFERRAL_INVALID_WITHDRAW_TYPE: '请选择正确的收款方式',
+  CUSTOM_REFERRAL_WITHDRAW_DISABLED: '当前推广员已停用提现',
+  CUSTOM_REFERRAL_RATE_NOT_CONFIGURED: '请先在后台设置全局返佣比例',
+  CUSTOM_REFERRAL_ADJUST_INSUFFICIENT: '可提现佣金不足，无法继续扣减',
+  'withdrawal account is required': '请填写收款账号',
+  'insufficient available commission': '可提现佣金不足',
+  'file is required': '请选择要上传的二维码图片',
+  'empty upload data': '上传文件内容为空，请重新选择图片',
+  'failed to open upload': '无法读取上传文件，请重新选择图片',
+  'failed to read upload': '读取上传文件失败，请重新上传',
+}
+
 /**
  * Extract the error code from an API error object.
  *
@@ -127,9 +144,11 @@ export function extractApiErrorMessage(
 ): string {
   if (!err) return fallback
 
+  const code = extractApiErrorCode(err)
+  if (code && builtInErrorMap[code]) return builtInErrorMap[code]
+
   // Try i18n mapping by error code first
   if (i18nMap) {
-    const code = extractApiErrorCode(err)
     if (code && i18nMap[code]) return i18nMap[code]
   }
 
@@ -137,17 +156,18 @@ export function extractApiErrorMessage(
   if (typeof err === 'object' && err !== null) {
     const e = err as ApiErrorLike
     // Interceptor shape: { message, error }
-    if (e.message) return e.message
-    if (e.error) return e.error
+    if (e.message) return builtInErrorMap[e.message] || e.message
+    if (e.error) return builtInErrorMap[e.error] || e.error
     // Legacy axios shape: { response.data.detail }
-    if (e.response?.data?.detail) return e.response.data.detail
-    if (e.response?.data?.message) return e.response.data.message
+    if (e.response?.data?.detail) return builtInErrorMap[e.response.data.detail] || e.response.data.detail
+    if (e.response?.data?.message) return builtInErrorMap[e.response.data.message] || e.response.data.message
   }
 
   // Standard Error
-  if (err instanceof Error) return err.message
+  if (err instanceof Error) return builtInErrorMap[err.message] || err.message
 
   // Last resort
   const str = String(err)
-  return str === '[object Object]' ? fallback : str
+  if (str === '[object Object]') return fallback
+  return builtInErrorMap[str] || str
 }
