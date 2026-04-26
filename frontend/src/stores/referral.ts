@@ -1,16 +1,18 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { referralAPI } from '@/api/referral'
-import type { CustomReferralSummary } from '@/types'
+import type { CustomAffiliate, CustomReferralSummary } from '@/types'
 import { useAuthStore } from './auth'
 
 export const useReferralStore = defineStore('referral', () => {
+  const profile = ref<CustomAffiliate | null>(null)
   const summary = ref<CustomReferralSummary | null>(null)
   const loading = ref(false)
   const loadedForUserId = ref<number | null>(null)
-  const canAccess = computed(() => !!summary.value)
+  const canAccess = computed(() => profile.value?.status === 'approved')
 
   function clear(): void {
+    profile.value = null
     summary.value = null
     loading.value = false
     loadedForUserId.value = null
@@ -28,11 +30,16 @@ export const useReferralStore = defineStore('referral', () => {
     }
     loading.value = true
     try {
-      const data = await referralAPI.getSummary()
-      summary.value = data
+      profile.value = await referralAPI.getProfile()
+      if (profile.value?.status === 'approved') {
+        summary.value = await referralAPI.getSummary()
+      } else {
+        summary.value = null
+      }
       loadedForUserId.value = userId
-      return data
+      return summary.value
     } catch {
+      profile.value = null
       summary.value = null
       loadedForUserId.value = userId
       return null
@@ -42,6 +49,7 @@ export const useReferralStore = defineStore('referral', () => {
   }
 
   return {
+    profile,
     summary,
     loading,
     canAccess,

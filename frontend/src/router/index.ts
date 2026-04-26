@@ -206,7 +206,6 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
-      requiresReferral: true,
       title: '推广中心'
     }
   },

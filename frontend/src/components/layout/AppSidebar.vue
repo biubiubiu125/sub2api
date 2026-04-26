@@ -665,11 +665,9 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
       iconSvg: item.icon_svg,
     })),
   )
-  if (referralStore.canAccess) {
-    items.splice(items.findIndex(item => item.path === '/profile'), 0,
-      { path: '/affiliate', label: t('nav.referralCenter'), icon: UsersIcon, hideInSimpleMode: true },
-    )
-  }
+  items.splice(items.findIndex(item => item.path === '/profile'), 0,
+    { path: '/affiliate', label: t('nav.referralCenter'), icon: UsersIcon, hideInSimpleMode: true },
+  )
   return items
 }
 

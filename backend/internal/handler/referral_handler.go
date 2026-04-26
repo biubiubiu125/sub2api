@@ -30,6 +30,10 @@ type createReferralWithdrawalRequest struct {
 	ApplicantNote  string  `json:"applicant_note"`
 }
 
+type applyReferralRequest struct {
+	ApplicantNote string `json:"applicant_note"`
+}
+
 func NewReferralHandler(referralService *service.CustomReferralService, assetService *service.ReferralAssetService) *ReferralHandler {
 	return &ReferralHandler{
 		referralService: referralService,
@@ -79,6 +83,39 @@ func (h *ReferralHandler) GetSummary(c *gin.Context) {
 		return
 	}
 	response.Success(c, dashboard)
+}
+
+func (h *ReferralHandler) GetProfile(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok || subject.UserID <= 0 {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	item, err := h.referralService.GetProfile(c.Request.Context(), subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, item)
+}
+
+func (h *ReferralHandler) ApplyAffiliate(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok || subject.UserID <= 0 {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+	var req applyReferralRequest
+	if err := c.ShouldBindJSON(&req); err != nil && err.Error() != "EOF" {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	item, err := h.referralService.ApplyAffiliate(c.Request.Context(), subject.UserID, strings.TrimSpace(req.ApplicantNote))
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, item)
 }
 
 func (h *ReferralHandler) ListCommissions(c *gin.Context) {

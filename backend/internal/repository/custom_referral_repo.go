@@ -116,6 +116,74 @@ ON CONFLICT (affiliate_id) DO NOTHING`, userID); err != nil {
 	return out, nil
 }
 
+func (r *customReferralRepository) UpsertAffiliateApplication(ctx context.Context, userID int64, note string) (*service.CustomAffiliate, error) {
+	var out *service.CustomAffiliate
+	err := r.withTx(ctx, func(txCtx context.Context, exec sqlQueryExecutor) error {
+		existing, err := r.getAffiliateByUserIDWithExecutor(txCtx, exec, userID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+
+		if existing == nil {
+			code, codeErr := r.generateUniqueInviteCode(txCtx, exec)
+			if codeErr != nil {
+				return codeErr
+			}
+			if _, err := exec.ExecContext(txCtx, `
+INSERT INTO custom_affiliates (
+    user_id, invite_code, status, source_type,
+    acquisition_enabled, settlement_enabled, withdrawal_enabled,
+    risk_reason, risk_note, created_at, updated_at
+) VALUES ($1, $2, $3, $4, FALSE, FALSE, FALSE, '', $5, NOW(), NOW())`,
+				userID,
+				code,
+				service.CustomAffiliateStatusPending,
+				service.CustomAffiliateSourceUserApplied,
+				note,
+			); err != nil {
+				return err
+			}
+		} else {
+			if existing.Status == service.CustomAffiliateStatusApproved {
+				return service.ErrCustomReferralAlreadyApproved
+			}
+			if _, err := exec.ExecContext(txCtx, `
+UPDATE custom_affiliates
+SET status = $2,
+    source_type = $3,
+    acquisition_enabled = FALSE,
+    settlement_enabled = FALSE,
+    withdrawal_enabled = FALSE,
+    risk_reason = '',
+    risk_note = $4,
+    approved_by = NULL,
+    approved_at = NULL,
+    disabled_by = NULL,
+    disabled_at = NULL,
+    updated_at = NOW()
+WHERE user_id = $1`,
+				userID,
+				service.CustomAffiliateStatusPending,
+				service.CustomAffiliateSourceUserApplied,
+				note,
+			); err != nil {
+				return err
+			}
+		}
+
+		item, err := r.getAffiliateByUserIDWithExecutor(txCtx, exec, userID)
+		if err != nil {
+			return err
+		}
+		out = item
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (r *customReferralRepository) SetAffiliateStatus(ctx context.Context, userID, adminID int64, status string, acquisitionEnabled, settlementEnabled, withdrawalEnabled bool, reason string) (*service.CustomAffiliate, error) {
 	var out *service.CustomAffiliate
 	err := r.withTx(ctx, func(txCtx context.Context, exec sqlQueryExecutor) error {

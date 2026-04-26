@@ -29,6 +29,7 @@ const builtInErrorMap: Record<string, string> = {
   CUSTOM_REFERRAL_INVALID_WITHDRAW_TYPE: '请选择正确的收款方式',
   CUSTOM_REFERRAL_WITHDRAW_DISABLED: '当前推广员已停用提现',
   CUSTOM_REFERRAL_RATE_NOT_CONFIGURED: '请先在后台设置全局返佣比例',
+  CUSTOM_REFERRAL_ALREADY_APPROVED: '当前账号已经是推广员',
   CUSTOM_REFERRAL_ADJUST_INSUFFICIENT: '可提现佣金不足，无法继续扣减',
   'withdrawal account is required': '请填写收款账号',
   'insufficient available commission': '可提现佣金不足',

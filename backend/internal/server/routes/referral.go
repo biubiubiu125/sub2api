@@ -35,7 +35,9 @@ func RegisterReferralRoutes(
 		{
 			referral := ext.Group("/referral")
 			{
+				referral.GET("/profile", h.Referral.GetProfile)
 				referral.GET("/summary", h.Referral.GetSummary)
+				referral.POST("/apply", h.Referral.ApplyAffiliate)
 				referral.GET("/commissions", h.Referral.ListCommissions)
 				referral.GET("/withdrawals", h.Referral.ListWithdrawals)
 				referral.POST("/withdrawals", h.Referral.CreateWithdrawal)

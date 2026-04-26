@@ -1,5 +1,6 @@
 import { apiClient } from './client'
 import type {
+  CustomAffiliate,
   CustomReferralCommission,
   CustomReferralSummary,
   CustomReferralWithdrawal,
@@ -16,8 +17,22 @@ export interface ReferralWithdrawalCreateRequest {
   applicant_note?: string
 }
 
+export interface ReferralApplicationRequest {
+  applicant_note?: string
+}
+
+async function getProfile(): Promise<CustomAffiliate | null> {
+  const { data } = await apiClient.get<CustomAffiliate | null>('/ext/referral/profile')
+  return data
+}
+
 async function getSummary(): Promise<CustomReferralSummary> {
   const { data } = await apiClient.get<CustomReferralSummary>('/ext/referral/summary')
+  return data
+}
+
+async function applyAffiliate(payload?: ReferralApplicationRequest): Promise<CustomAffiliate> {
+  const { data } = await apiClient.post<CustomAffiliate>('/ext/referral/apply', payload ?? {})
   return data
 }
 
@@ -57,7 +72,9 @@ async function uploadAsset(file: File): Promise<{ url: string }> {
 }
 
 export const referralAPI = {
+  getProfile,
   getSummary,
+  applyAffiliate,
   listCommissions,
   listWithdrawals,
   createWithdrawal,

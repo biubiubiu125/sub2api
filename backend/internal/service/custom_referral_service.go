@@ -25,6 +25,7 @@ const (
 	CustomAffiliateStatusDisabled = "disabled"
 
 	CustomAffiliateSourceAdminCreated = "admin_created"
+	CustomAffiliateSourceUserApplied  = "user_applied"
 
 	CustomReferralCommissionStatusPending   = "pending"
 	CustomReferralCommissionStatusAvailable = "available"
@@ -54,6 +55,7 @@ var (
 	ErrCustomReferralAlreadyBound         = infraerrors.Conflict("CUSTOM_REFERRAL_ALREADY_BOUND", "referral binding already exists")
 	ErrCustomReferralRateNotConfigured    = infraerrors.BadRequest("CUSTOM_REFERRAL_RATE_NOT_CONFIGURED", "default referral rate is not configured")
 	ErrCustomReferralPermissionDenied     = infraerrors.Forbidden("CUSTOM_REFERRAL_PERMISSION_DENIED", "user is not an approved affiliate")
+	ErrCustomReferralAlreadyApproved      = infraerrors.Conflict("CUSTOM_REFERRAL_ALREADY_APPROVED", "user is already an approved affiliate")
 	ErrCustomReferralAdjustInsufficient   = infraerrors.BadRequest("CUSTOM_REFERRAL_ADJUST_INSUFFICIENT", "insufficient available commission for adjustment")
 	ErrCustomReferralInvalidWithdrawType  = infraerrors.BadRequest("CUSTOM_REFERRAL_INVALID_WITHDRAW_TYPE", "invalid withdrawal account type")
 	ErrCustomReferralInvalidWithdrawNet   = infraerrors.BadRequest("CUSTOM_REFERRAL_INVALID_WITHDRAW_NETWORK", "invalid withdrawal network")
@@ -289,6 +291,7 @@ type CustomReferralRepository interface {
 	ReverseCommissionForRefund(ctx context.Context, refund CustomReferralRefundInput) (float64, error)
 	SettleDueCommissions(ctx context.Context, now time.Time) error
 	GetDashboardByUserID(ctx context.Context, userID int64) (*CustomReferralDashboard, error)
+	UpsertAffiliateApplication(ctx context.Context, userID int64, note string) (*CustomAffiliate, error)
 	ListAffiliates(ctx context.Context, params CustomReferralListParams) ([]CustomAffiliate, int64, error)
 	ListAffiliateBindings(ctx context.Context, affiliateUserID int64, page, pageSize int) ([]CustomReferralBindingDetail, int64, error)
 	GetAdminOverview(ctx context.Context) (*CustomReferralAdminOverview, error)
@@ -542,6 +545,27 @@ func (s *CustomReferralService) GetDashboard(ctx context.Context, userID int64) 
 		}
 	}
 	return dashboard, nil
+}
+
+func (s *CustomReferralService) GetProfile(ctx context.Context, userID int64) (*CustomAffiliate, error) {
+	if s == nil || s.repo == nil {
+		return nil, ErrServiceUnavailable
+	}
+	item, err := s.repo.GetAffiliateByUserID(ctx, userID)
+	if err != nil {
+		if err == ErrCustomReferralAffiliateNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return item, nil
+}
+
+func (s *CustomReferralService) ApplyAffiliate(ctx context.Context, userID int64, note string) (*CustomAffiliate, error) {
+	if s == nil || s.repo == nil {
+		return nil, ErrServiceUnavailable
+	}
+	return s.repo.UpsertAffiliateApplication(ctx, userID, strings.TrimSpace(note))
 }
 
 func (s *CustomReferralService) ApproveAffiliate(ctx context.Context, userID, adminID int64, rateOverride *float64) (*CustomAffiliate, error) {
