@@ -224,6 +224,7 @@ type PublicSettings struct {
 
 	// Available Channels feature (user-facing aggregate view)
 	AvailableChannelsEnabled bool `json:"available_channels_enabled"`
+	AffiliateEnabled         bool `json:"affiliate_enabled"`
 }
 
 type WeChatConnectOAuthConfig struct {
