@@ -11,6 +11,12 @@
           </div>
 
           <form class="space-y-4" @submit.prevent="submitWithdrawal">
+            <div
+              v-if="!canWithdraw"
+              class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-200"
+            >
+              当前推广员状态不可提交提现申请。
+            </div>
             <div class="grid gap-4 sm:grid-cols-2">
               <div>
                 <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">提现金额</label>
@@ -57,7 +63,7 @@
 
             <div class="flex items-center justify-end gap-3">
               <RouterLink to="/affiliate/withdrawals" class="btn btn-secondary">查看提现记录</RouterLink>
-              <button class="btn btn-primary" type="submit" :disabled="submitting">
+              <button class="btn btn-primary" type="submit" :disabled="submitting || !canWithdraw">
                 <Icon name="dollar" size="sm" />
                 <span>{{ submitting ? '提交中...' : '提交申请' }}</span>
               </button>
@@ -112,6 +118,7 @@ const form = reactive({
 })
 
 const summary = computed(() => referralStore.summary)
+const canWithdraw = computed(() => referralStore.canWithdraw)
 
 const accountTypeOptions = [
   { value: 'alipay', label: '支付宝' },
@@ -143,9 +150,18 @@ function handleQrFileChange(event: Event): void {
     })
 }
 
+function createWithdrawalIdempotencyKey(): string {
+  const cryptoApi = globalThis.crypto
+  if (cryptoApi?.randomUUID) {
+    return cryptoApi.randomUUID()
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
 async function submitWithdrawal(): Promise<void> {
-  if (submitting.value) return
+  if (submitting.value || !canWithdraw.value) return
   submitting.value = true
+  const idempotencyKey = createWithdrawalIdempotencyKey()
   try {
     await referralAPI.createWithdrawal({
       amount: form.amount,
@@ -155,7 +171,7 @@ async function submitWithdrawal(): Promise<void> {
       account_network: form.account_type === 'usdt' ? form.account_network : '',
       qr_image_url: form.qr_image_url || '',
       applicant_note: form.applicant_note || '',
-    })
+    }, idempotencyKey)
     appStore.showSuccess('提现申请已提交')
     await referralStore.ensureLoaded(true)
     router.push('/affiliate/withdrawals')

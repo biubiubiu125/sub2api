@@ -154,6 +154,129 @@ func (_u *PaymentOrderUpdate) AddFeeRate(v float64) *PaymentOrderUpdate {
 	return _u
 }
 
+// SetCommissionBaseAmount sets the "commission_base_amount" field.
+func (_u *PaymentOrderUpdate) SetCommissionBaseAmount(v float64) *PaymentOrderUpdate {
+	_u.mutation.ResetCommissionBaseAmount()
+	_u.mutation.SetCommissionBaseAmount(v)
+	return _u
+}
+
+// SetNillableCommissionBaseAmount sets the "commission_base_amount" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableCommissionBaseAmount(v *float64) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetCommissionBaseAmount(*v)
+	}
+	return _u
+}
+
+// AddCommissionBaseAmount adds value to the "commission_base_amount" field.
+func (_u *PaymentOrderUpdate) AddCommissionBaseAmount(v float64) *PaymentOrderUpdate {
+	_u.mutation.AddCommissionBaseAmount(v)
+	return _u
+}
+
+// SetCustomReferralAffiliateID sets the "custom_referral_affiliate_id" field.
+func (_u *PaymentOrderUpdate) SetCustomReferralAffiliateID(v int64) *PaymentOrderUpdate {
+	_u.mutation.ResetCustomReferralAffiliateID()
+	_u.mutation.SetCustomReferralAffiliateID(v)
+	return _u
+}
+
+// SetNillableCustomReferralAffiliateID sets the "custom_referral_affiliate_id" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableCustomReferralAffiliateID(v *int64) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetCustomReferralAffiliateID(*v)
+	}
+	return _u
+}
+
+// AddCustomReferralAffiliateID adds value to the "custom_referral_affiliate_id" field.
+func (_u *PaymentOrderUpdate) AddCustomReferralAffiliateID(v int64) *PaymentOrderUpdate {
+	_u.mutation.AddCustomReferralAffiliateID(v)
+	return _u
+}
+
+// ClearCustomReferralAffiliateID clears the value of the "custom_referral_affiliate_id" field.
+func (_u *PaymentOrderUpdate) ClearCustomReferralAffiliateID() *PaymentOrderUpdate {
+	_u.mutation.ClearCustomReferralAffiliateID()
+	return _u
+}
+
+// SetCustomReferralRate sets the "custom_referral_rate" field.
+func (_u *PaymentOrderUpdate) SetCustomReferralRate(v float64) *PaymentOrderUpdate {
+	_u.mutation.ResetCustomReferralRate()
+	_u.mutation.SetCustomReferralRate(v)
+	return _u
+}
+
+// SetNillableCustomReferralRate sets the "custom_referral_rate" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableCustomReferralRate(v *float64) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetCustomReferralRate(*v)
+	}
+	return _u
+}
+
+// AddCustomReferralRate adds value to the "custom_referral_rate" field.
+func (_u *PaymentOrderUpdate) AddCustomReferralRate(v float64) *PaymentOrderUpdate {
+	_u.mutation.AddCustomReferralRate(v)
+	return _u
+}
+
+// SetCustomReferralCommissionStatus sets the "custom_referral_commission_status" field.
+func (_u *PaymentOrderUpdate) SetCustomReferralCommissionStatus(v string) *PaymentOrderUpdate {
+	_u.mutation.SetCustomReferralCommissionStatus(v)
+	return _u
+}
+
+// SetNillableCustomReferralCommissionStatus sets the "custom_referral_commission_status" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableCustomReferralCommissionStatus(v *string) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetCustomReferralCommissionStatus(*v)
+	}
+	return _u
+}
+
+// SetCustomReferralCommissionError sets the "custom_referral_commission_error" field.
+func (_u *PaymentOrderUpdate) SetCustomReferralCommissionError(v string) *PaymentOrderUpdate {
+	_u.mutation.SetCustomReferralCommissionError(v)
+	return _u
+}
+
+// SetNillableCustomReferralCommissionError sets the "custom_referral_commission_error" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableCustomReferralCommissionError(v *string) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetCustomReferralCommissionError(*v)
+	}
+	return _u
+}
+
+// ClearCustomReferralCommissionError clears the value of the "custom_referral_commission_error" field.
+func (_u *PaymentOrderUpdate) ClearCustomReferralCommissionError() *PaymentOrderUpdate {
+	_u.mutation.ClearCustomReferralCommissionError()
+	return _u
+}
+
+// SetCustomReferralCommissionAt sets the "custom_referral_commission_at" field.
+func (_u *PaymentOrderUpdate) SetCustomReferralCommissionAt(v time.Time) *PaymentOrderUpdate {
+	_u.mutation.SetCustomReferralCommissionAt(v)
+	return _u
+}
+
+// SetNillableCustomReferralCommissionAt sets the "custom_referral_commission_at" field if the given value is not nil.
+func (_u *PaymentOrderUpdate) SetNillableCustomReferralCommissionAt(v *time.Time) *PaymentOrderUpdate {
+	if v != nil {
+		_u.SetCustomReferralCommissionAt(*v)
+	}
+	return _u
+}
+
+// ClearCustomReferralCommissionAt clears the value of the "custom_referral_commission_at" field.
+func (_u *PaymentOrderUpdate) ClearCustomReferralCommissionAt() *PaymentOrderUpdate {
+	_u.mutation.ClearCustomReferralCommissionAt()
+	return _u
+}
+
 // SetRechargeCode sets the "recharge_code" field.
 func (_u *PaymentOrderUpdate) SetRechargeCode(v string) *PaymentOrderUpdate {
 	_u.mutation.SetRechargeCode(v)
@@ -778,6 +901,11 @@ func (_u *PaymentOrderUpdate) check() error {
 			return &ValidationError{Name: "user_name", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.user_name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.CustomReferralCommissionStatus(); ok {
+		if err := paymentorder.CustomReferralCommissionStatusValidator(v); err != nil {
+			return &ValidationError{Name: "custom_referral_commission_status", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.custom_referral_commission_status": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.RechargeCode(); ok {
 		if err := paymentorder.RechargeCodeValidator(v); err != nil {
 			return &ValidationError{Name: "recharge_code", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.recharge_code": %w`, err)}
@@ -880,6 +1008,42 @@ func (_u *PaymentOrderUpdate) sqlSave(ctx context.Context) (_node int, err error
 	}
 	if value, ok := _u.mutation.AddedFeeRate(); ok {
 		_spec.AddField(paymentorder.FieldFeeRate, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.CommissionBaseAmount(); ok {
+		_spec.SetField(paymentorder.FieldCommissionBaseAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedCommissionBaseAmount(); ok {
+		_spec.AddField(paymentorder.FieldCommissionBaseAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.CustomReferralAffiliateID(); ok {
+		_spec.SetField(paymentorder.FieldCustomReferralAffiliateID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedCustomReferralAffiliateID(); ok {
+		_spec.AddField(paymentorder.FieldCustomReferralAffiliateID, field.TypeInt64, value)
+	}
+	if _u.mutation.CustomReferralAffiliateIDCleared() {
+		_spec.ClearField(paymentorder.FieldCustomReferralAffiliateID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.CustomReferralRate(); ok {
+		_spec.SetField(paymentorder.FieldCustomReferralRate, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedCustomReferralRate(); ok {
+		_spec.AddField(paymentorder.FieldCustomReferralRate, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.CustomReferralCommissionStatus(); ok {
+		_spec.SetField(paymentorder.FieldCustomReferralCommissionStatus, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.CustomReferralCommissionError(); ok {
+		_spec.SetField(paymentorder.FieldCustomReferralCommissionError, field.TypeString, value)
+	}
+	if _u.mutation.CustomReferralCommissionErrorCleared() {
+		_spec.ClearField(paymentorder.FieldCustomReferralCommissionError, field.TypeString)
+	}
+	if value, ok := _u.mutation.CustomReferralCommissionAt(); ok {
+		_spec.SetField(paymentorder.FieldCustomReferralCommissionAt, field.TypeTime, value)
+	}
+	if _u.mutation.CustomReferralCommissionAtCleared() {
+		_spec.ClearField(paymentorder.FieldCustomReferralCommissionAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.RechargeCode(); ok {
 		_spec.SetField(paymentorder.FieldRechargeCode, field.TypeString, value)
@@ -1214,6 +1378,129 @@ func (_u *PaymentOrderUpdateOne) SetNillableFeeRate(v *float64) *PaymentOrderUpd
 // AddFeeRate adds value to the "fee_rate" field.
 func (_u *PaymentOrderUpdateOne) AddFeeRate(v float64) *PaymentOrderUpdateOne {
 	_u.mutation.AddFeeRate(v)
+	return _u
+}
+
+// SetCommissionBaseAmount sets the "commission_base_amount" field.
+func (_u *PaymentOrderUpdateOne) SetCommissionBaseAmount(v float64) *PaymentOrderUpdateOne {
+	_u.mutation.ResetCommissionBaseAmount()
+	_u.mutation.SetCommissionBaseAmount(v)
+	return _u
+}
+
+// SetNillableCommissionBaseAmount sets the "commission_base_amount" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableCommissionBaseAmount(v *float64) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetCommissionBaseAmount(*v)
+	}
+	return _u
+}
+
+// AddCommissionBaseAmount adds value to the "commission_base_amount" field.
+func (_u *PaymentOrderUpdateOne) AddCommissionBaseAmount(v float64) *PaymentOrderUpdateOne {
+	_u.mutation.AddCommissionBaseAmount(v)
+	return _u
+}
+
+// SetCustomReferralAffiliateID sets the "custom_referral_affiliate_id" field.
+func (_u *PaymentOrderUpdateOne) SetCustomReferralAffiliateID(v int64) *PaymentOrderUpdateOne {
+	_u.mutation.ResetCustomReferralAffiliateID()
+	_u.mutation.SetCustomReferralAffiliateID(v)
+	return _u
+}
+
+// SetNillableCustomReferralAffiliateID sets the "custom_referral_affiliate_id" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableCustomReferralAffiliateID(v *int64) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetCustomReferralAffiliateID(*v)
+	}
+	return _u
+}
+
+// AddCustomReferralAffiliateID adds value to the "custom_referral_affiliate_id" field.
+func (_u *PaymentOrderUpdateOne) AddCustomReferralAffiliateID(v int64) *PaymentOrderUpdateOne {
+	_u.mutation.AddCustomReferralAffiliateID(v)
+	return _u
+}
+
+// ClearCustomReferralAffiliateID clears the value of the "custom_referral_affiliate_id" field.
+func (_u *PaymentOrderUpdateOne) ClearCustomReferralAffiliateID() *PaymentOrderUpdateOne {
+	_u.mutation.ClearCustomReferralAffiliateID()
+	return _u
+}
+
+// SetCustomReferralRate sets the "custom_referral_rate" field.
+func (_u *PaymentOrderUpdateOne) SetCustomReferralRate(v float64) *PaymentOrderUpdateOne {
+	_u.mutation.ResetCustomReferralRate()
+	_u.mutation.SetCustomReferralRate(v)
+	return _u
+}
+
+// SetNillableCustomReferralRate sets the "custom_referral_rate" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableCustomReferralRate(v *float64) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetCustomReferralRate(*v)
+	}
+	return _u
+}
+
+// AddCustomReferralRate adds value to the "custom_referral_rate" field.
+func (_u *PaymentOrderUpdateOne) AddCustomReferralRate(v float64) *PaymentOrderUpdateOne {
+	_u.mutation.AddCustomReferralRate(v)
+	return _u
+}
+
+// SetCustomReferralCommissionStatus sets the "custom_referral_commission_status" field.
+func (_u *PaymentOrderUpdateOne) SetCustomReferralCommissionStatus(v string) *PaymentOrderUpdateOne {
+	_u.mutation.SetCustomReferralCommissionStatus(v)
+	return _u
+}
+
+// SetNillableCustomReferralCommissionStatus sets the "custom_referral_commission_status" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableCustomReferralCommissionStatus(v *string) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetCustomReferralCommissionStatus(*v)
+	}
+	return _u
+}
+
+// SetCustomReferralCommissionError sets the "custom_referral_commission_error" field.
+func (_u *PaymentOrderUpdateOne) SetCustomReferralCommissionError(v string) *PaymentOrderUpdateOne {
+	_u.mutation.SetCustomReferralCommissionError(v)
+	return _u
+}
+
+// SetNillableCustomReferralCommissionError sets the "custom_referral_commission_error" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableCustomReferralCommissionError(v *string) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetCustomReferralCommissionError(*v)
+	}
+	return _u
+}
+
+// ClearCustomReferralCommissionError clears the value of the "custom_referral_commission_error" field.
+func (_u *PaymentOrderUpdateOne) ClearCustomReferralCommissionError() *PaymentOrderUpdateOne {
+	_u.mutation.ClearCustomReferralCommissionError()
+	return _u
+}
+
+// SetCustomReferralCommissionAt sets the "custom_referral_commission_at" field.
+func (_u *PaymentOrderUpdateOne) SetCustomReferralCommissionAt(v time.Time) *PaymentOrderUpdateOne {
+	_u.mutation.SetCustomReferralCommissionAt(v)
+	return _u
+}
+
+// SetNillableCustomReferralCommissionAt sets the "custom_referral_commission_at" field if the given value is not nil.
+func (_u *PaymentOrderUpdateOne) SetNillableCustomReferralCommissionAt(v *time.Time) *PaymentOrderUpdateOne {
+	if v != nil {
+		_u.SetCustomReferralCommissionAt(*v)
+	}
+	return _u
+}
+
+// ClearCustomReferralCommissionAt clears the value of the "custom_referral_commission_at" field.
+func (_u *PaymentOrderUpdateOne) ClearCustomReferralCommissionAt() *PaymentOrderUpdateOne {
+	_u.mutation.ClearCustomReferralCommissionAt()
 	return _u
 }
 
@@ -1854,6 +2141,11 @@ func (_u *PaymentOrderUpdateOne) check() error {
 			return &ValidationError{Name: "user_name", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.user_name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.CustomReferralCommissionStatus(); ok {
+		if err := paymentorder.CustomReferralCommissionStatusValidator(v); err != nil {
+			return &ValidationError{Name: "custom_referral_commission_status", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.custom_referral_commission_status": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.RechargeCode(); ok {
 		if err := paymentorder.RechargeCodeValidator(v); err != nil {
 			return &ValidationError{Name: "recharge_code", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.recharge_code": %w`, err)}
@@ -1973,6 +2265,42 @@ func (_u *PaymentOrderUpdateOne) sqlSave(ctx context.Context) (_node *PaymentOrd
 	}
 	if value, ok := _u.mutation.AddedFeeRate(); ok {
 		_spec.AddField(paymentorder.FieldFeeRate, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.CommissionBaseAmount(); ok {
+		_spec.SetField(paymentorder.FieldCommissionBaseAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedCommissionBaseAmount(); ok {
+		_spec.AddField(paymentorder.FieldCommissionBaseAmount, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.CustomReferralAffiliateID(); ok {
+		_spec.SetField(paymentorder.FieldCustomReferralAffiliateID, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedCustomReferralAffiliateID(); ok {
+		_spec.AddField(paymentorder.FieldCustomReferralAffiliateID, field.TypeInt64, value)
+	}
+	if _u.mutation.CustomReferralAffiliateIDCleared() {
+		_spec.ClearField(paymentorder.FieldCustomReferralAffiliateID, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.CustomReferralRate(); ok {
+		_spec.SetField(paymentorder.FieldCustomReferralRate, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedCustomReferralRate(); ok {
+		_spec.AddField(paymentorder.FieldCustomReferralRate, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.CustomReferralCommissionStatus(); ok {
+		_spec.SetField(paymentorder.FieldCustomReferralCommissionStatus, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.CustomReferralCommissionError(); ok {
+		_spec.SetField(paymentorder.FieldCustomReferralCommissionError, field.TypeString, value)
+	}
+	if _u.mutation.CustomReferralCommissionErrorCleared() {
+		_spec.ClearField(paymentorder.FieldCustomReferralCommissionError, field.TypeString)
+	}
+	if value, ok := _u.mutation.CustomReferralCommissionAt(); ok {
+		_spec.SetField(paymentorder.FieldCustomReferralCommissionAt, field.TypeTime, value)
+	}
+	if _u.mutation.CustomReferralCommissionAtCleared() {
+		_spec.ClearField(paymentorder.FieldCustomReferralCommissionAt, field.TypeTime)
 	}
 	if value, ok := _u.mutation.RechargeCode(); ok {
 		_spec.SetField(paymentorder.FieldRechargeCode, field.TypeString, value)

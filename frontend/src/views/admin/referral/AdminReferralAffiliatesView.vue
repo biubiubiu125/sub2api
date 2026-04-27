@@ -36,7 +36,7 @@
                 <th class="px-4 py-3 font-medium">账号</th>
                 <th class="px-4 py-3 font-medium">推广码</th>
                 <th class="px-4 py-3 font-medium">状态</th>
-                <th class="px-4 py-3 font-medium">专属比例</th>
+                <th class="px-4 py-3 font-medium">返佣比例</th>
                 <th class="px-4 py-3 font-medium">操作</th>
               </tr>
             </thead>
@@ -56,15 +56,18 @@
                 <td class="px-4 py-3">
                   <span :class="statusClass(item.status)" class="rounded-full px-2.5 py-1 text-xs font-medium">{{ statusLabel(item.status) }}</span>
                 </td>
-                <td class="px-4 py-3 text-gray-700 dark:text-gray-300">{{ item.rate_override == null ? '-' : `${item.rate_override}%` }}</td>
+                <td class="px-4 py-3">
+                  <span :class="rateBadgeClass(item)" class="rounded-full px-2.5 py-1 text-xs font-medium">{{ rateDisplay(item) }}</span>
+                </td>
                 <td class="px-4 py-3">
                   <div class="flex flex-wrap items-center gap-2">
-                    <button v-if="item.status !== 'approved' && item.status !== 'rejected'" class="btn btn-secondary btn-sm" @click="openApproveDialog(item)">批准</button>
+                    <button v-if="item.status === 'pending'" class="btn btn-secondary btn-sm" @click="openApproveDialog(item)">批准</button>
                     <button v-if="item.status === 'pending'" class="btn btn-secondary btn-sm" @click="rejectAffiliate(item)">驳回</button>
                     <button v-if="item.status === 'approved'" class="btn btn-secondary btn-sm" @click="openDisableDialog(item)">停用</button>
                     <button v-if="item.status === 'disabled'" class="btn btn-secondary btn-sm" @click="restoreAffiliate(item)">恢复</button>
-                    <button v-if="item.status === 'approved' || item.status === 'disabled'" class="btn btn-secondary btn-sm" @click="openAdjustDialog(item, 'increase')">加佣金</button>
-                    <button v-if="item.status === 'approved' || item.status === 'disabled'" class="btn btn-secondary btn-sm" @click="openAdjustDialog(item, 'decrease')">减佣金</button>
+                    <button v-if="item.status === 'approved'" class="btn btn-secondary btn-sm" @click="openRateDialog(item)">设置比例</button>
+                    <button v-if="item.status === 'approved'" class="btn btn-secondary btn-sm" @click="openAdjustDialog(item, 'increase')">加佣金</button>
+                    <button v-if="item.status === 'approved'" class="btn btn-secondary btn-sm" @click="openAdjustDialog(item, 'decrease')">减佣金</button>
                   </div>
                 </td>
               </tr>
@@ -182,9 +185,12 @@
                     </td>
                     <td class="px-4 py-3 font-mono text-gray-700 dark:text-gray-300">{{ item.order_id }}</td>
                     <td class="px-4 py-3 text-gray-700 dark:text-gray-300">{{ orderTypeLabel(item.order_type) }}</td>
-                    <td class="px-4 py-3 text-gray-700 dark:text-gray-300">{{ formatMoney(item.base_amount) }}</td>
+                    <td class="px-4 py-3 text-gray-700 dark:text-gray-300">{{ formatMoney(netBaseAmount(item)) }}</td>
                     <td class="px-4 py-3 text-gray-700 dark:text-gray-300">{{ item.rate }}%</td>
-                    <td class="px-4 py-3 font-medium text-gray-900 dark:text-white">{{ formatMoney(item.commission_amount) }}</td>
+                    <td class="px-4 py-3 font-medium text-gray-900 dark:text-white">
+                      <div>{{ formatMoney(netCommissionAmount(item)) }}</div>
+                      <div v-if="item.refunded_amount > 0" class="text-xs font-normal text-gray-500 dark:text-dark-400">已冲销 {{ formatMoney(item.refunded_amount) }}</div>
+                    </td>
                     <td class="px-4 py-3">
                       <span :class="commissionStatusClass(item.status)" class="rounded-full px-2.5 py-1 text-xs font-medium">{{ commissionStatusLabel(item.status) }}</span>
                     </td>
@@ -238,11 +244,12 @@
           <div v-else class="text-sm text-gray-600 dark:text-dark-300">
             {{ dialog.target?.email || dialog.target?.username || '-' }}
           </div>
-          <div v-if="dialog.mode === 'approve' || dialog.mode === 'create'">
-            <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">专属返佣比例（可选）</label>
+          <div v-if="dialog.mode === 'create' || dialog.mode === 'approve' || dialog.mode === 'rate'">
+            <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">专属返佣比例</label>
             <input v-model.number="dialog.rateOverride" type="number" min="0" max="100" step="0.01" class="input" />
+            <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">留空表示使用全局返佣比例。</p>
           </div>
-          <div v-else>
+          <div v-if="dialog.mode === 'disable'">
             <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">停用原因</label>
             <textarea v-model.trim="dialog.reason" rows="4" class="input min-h-[110px]"></textarea>
           </div>
@@ -295,6 +302,7 @@ const loading = ref(false)
 const submitting = ref(false)
 const adjusting = ref(false)
 const items = ref<CustomAffiliate[]>([])
+const referralDefaultRate = ref<number | null>(null)
 const bindingItems = ref<CustomReferralBindingDetail[]>([])
 const commissionItems = ref<CustomReferralCommission[]>([])
 const withdrawalItems = ref<CustomReferralWithdrawal[]>([])
@@ -320,10 +328,10 @@ const subDetail = reactive<{
 })
 const dialog = reactive<{
   visible: boolean
-  mode: 'create' | 'approve' | 'disable'
+  mode: 'create' | 'approve' | 'disable' | 'rate'
   target: CustomAffiliate | null
   userId: number | null
-  rateOverride: number | null
+  rateOverride: number | string | null
   reason: string
 }>({
   visible: false,
@@ -350,6 +358,7 @@ const adjustDialog = reactive<{
 const dialogTitle = computed(() => {
   if (dialog.mode === 'create') return '手动开通推广员'
   if (dialog.mode === 'approve') return '批准推广员'
+  if (dialog.mode === 'rate') return '设置专属比例'
   return '停用推广员'
 })
 
@@ -357,21 +366,65 @@ const adjustDialogTitle = computed(() => (adjustDialog.mode === 'increase' ? '�
 
 const statusOptions = computed(() => [
   { value: '', label: '全部状态' },
-  { value: 'approved', label: '已批准' },
-  { value: 'disabled', label: '已停用' },
-  { value: 'pending', label: '待处理' },
-  { value: 'rejected', label: '已拒绝' },
+  { value: 'approved', label: '正常' },
+  { value: 'disabled', label: '停用' },
+  { value: 'pending', label: '待审核' },
+  { value: 'rejected', label: '已驳回' },
 ])
 
 function formatMoney(value: number): string {
   return `¥${value.toFixed(2)}`
 }
 
+function netCommissionAmount(item: CustomReferralCommission): number {
+  return Math.max(0, item.commission_amount - (item.refunded_amount || 0))
+}
+
+function netBaseAmount(item: CustomReferralCommission): number {
+  if (item.commission_amount <= 0) return Math.max(0, item.base_amount)
+  return Math.max(0, item.base_amount * (netCommissionAmount(item) / item.commission_amount))
+}
+
+function formatPercent(value: number): string {
+  return Number.isInteger(value) ? value.toFixed(0) : value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
+}
+
+function rateDisplay(item: CustomAffiliate): string {
+  if (item.rate_override != null) {
+    return `专属 ${formatPercent(item.rate_override)}%`
+  }
+  if (referralDefaultRate.value != null) {
+    return `全局 ${formatPercent(referralDefaultRate.value)}%`
+  }
+  return '全局比例'
+}
+
+function rateBadgeClass(item: CustomAffiliate): string {
+  if (item.rate_override != null) {
+    return 'bg-primary-100 text-primary-700 dark:bg-primary-900/30 dark:text-primary-300'
+  }
+  return 'bg-gray-100 text-gray-700 dark:bg-dark-700 dark:text-dark-200'
+}
+
+function normalizeDialogRate(): number | null {
+  const value = dialog.rateOverride
+  if (value === null || value === undefined || value === '') {
+    return null
+  }
+  const numeric = Number(value)
+  if (Number.isNaN(numeric)) {
+    return null
+  }
+  if (numeric < 0) return 0
+  if (numeric > 100) return 100
+  return numeric
+}
+
 function statusLabel(value: string): string {
-  if (value === 'approved') return '已批准'
-  if (value === 'disabled') return '已停用'
-  if (value === 'pending') return '待处理'
-  if (value === 'rejected') return '已拒绝'
+  if (value === 'approved') return '正常'
+  if (value === 'disabled') return '停用'
+  if (value === 'pending') return '待审核'
+  if (value === 'rejected') return '已驳回'
   return value || '-'
 }
 
@@ -414,6 +467,15 @@ function accountTypeLabel(item: CustomReferralWithdrawal): string {
   if (item.account_type === 'alipay') return '支付宝'
   if (item.account_type === 'wechat') return '微信'
   return item.account_type || '-'
+}
+
+async function loadReferralSettings(): Promise<void> {
+  try {
+    const settings = await adminReferralAPI.getSettings()
+    referralDefaultRate.value = settings.default_rate
+  } catch (error) {
+    appStore.showError(extractApiErrorMessage(error, '加载返佣设置失败'))
+  }
 }
 
 async function loadAffiliates(): Promise<void> {
@@ -528,6 +590,15 @@ function openApproveDialog(item: CustomAffiliate): void {
   dialog.reason = ''
 }
 
+function openRateDialog(item: CustomAffiliate): void {
+  dialog.visible = true
+  dialog.mode = 'rate'
+  dialog.target = item
+  dialog.userId = item.user_id
+  dialog.rateOverride = item.rate_override ?? null
+  dialog.reason = ''
+}
+
 function openDisableDialog(item: CustomAffiliate): void {
   dialog.visible = true
   dialog.mode = 'disable'
@@ -575,15 +646,20 @@ async function submitDialog(): Promise<void> {
   const target = dialog.target
   submitting.value = true
   try {
-    if (dialog.mode === 'approve' || dialog.mode === 'create') {
-      const userId = dialog.mode === 'create' ? dialog.userId : target!.user_id
-      if (!userId || userId <= 0) {
+    if (dialog.mode === 'create') {
+      if (!dialog.userId || dialog.userId <= 0) {
         appStore.showError('请填写有效的用户 ID')
         submitting.value = false
         return
       }
-      await adminReferralAPI.approveAffiliate(userId, { rate_override: dialog.rateOverride ?? undefined })
-      appStore.showSuccess(dialog.mode === 'create' ? '推广员已开通' : '推广员已批准')
+      await adminReferralAPI.approveAffiliate(dialog.userId, { rate_override: normalizeDialogRate() })
+      appStore.showSuccess('推广员已开通')
+    } else if (dialog.mode === 'approve') {
+      await adminReferralAPI.approveAffiliate(target!.user_id, { rate_override: normalizeDialogRate() })
+      appStore.showSuccess('推广员已批准')
+    } else if (dialog.mode === 'rate') {
+      await adminReferralAPI.updateAffiliateRate(target!.user_id, { rate_override: normalizeDialogRate() })
+      appStore.showSuccess('专属比例已更新')
     } else {
       await adminReferralAPI.disableAffiliate(target!.user_id, { reason: dialog.reason })
       appStore.showSuccess('推广员已停用')
@@ -606,9 +682,13 @@ async function submitAdjustDialog(): Promise<void> {
   adjusting.value = true
   try {
     const amount = adjustDialog.mode === 'increase' ? adjustDialog.amount : -adjustDialog.amount
+    const idempotencyKey = typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `adjust-${Date.now()}-${Math.random().toString(36).slice(2)}`
     await adminReferralAPI.adjustAffiliate(adjustDialog.target.user_id, {
       amount,
       remark: adjustDialog.remark,
+      idempotency_key: idempotencyKey,
     })
     appStore.showSuccess(adjustDialog.mode === 'increase' ? '佣金已增加' : '佣金已减少')
     closeAdjustDialog()
@@ -645,6 +725,7 @@ async function rejectAffiliate(item: CustomAffiliate): Promise<void> {
 }
 
 onMounted(() => {
+  loadReferralSettings()
   loadAffiliates()
 })
 </script>

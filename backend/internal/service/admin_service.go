@@ -819,10 +819,17 @@ func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, 
 		return nil, fmt.Errorf("balance cannot be negative, current balance: %.2f, requested operation would result in: %.2f", oldBalance, user.Balance)
 	}
 
-	if err := s.userRepo.Update(ctx, user); err != nil {
-		return nil, err
-	}
 	balanceDiff := user.Balance - oldBalance
+	if balanceDiff != 0 {
+		if err := s.userRepo.UpdateBalance(ctx, userID, balanceDiff); err != nil {
+			return nil, err
+		}
+		updated, err := s.userRepo.GetByID(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		user = updated
+	}
 	if s.authCacheInvalidator != nil && balanceDiff != 0 {
 		s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, userID)
 	}

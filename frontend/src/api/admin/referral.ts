@@ -5,6 +5,8 @@ import type {
   CustomReferralAdminOverview,
   CustomReferralBindingDetail,
   CustomReferralCommission,
+  CustomReferralCommissionJob,
+  CustomReferralCommissionReversal,
   CustomReferralSettlementBatch,
   CustomReferralWithdrawal,
   PaginatedResponse
@@ -47,6 +49,11 @@ async function approveAffiliate(userId: number, payload?: { rate_override?: numb
   return data
 }
 
+async function updateAffiliateRate(userId: number, payload: { rate_override: number | null }): Promise<CustomAffiliate> {
+  const { data } = await apiClient.post<CustomAffiliate>(`/admin/referral/affiliates/${userId}/rate`, payload)
+  return data
+}
+
 async function disableAffiliate(userId: number, payload?: { reason?: string }): Promise<CustomAffiliate> {
   const { data } = await apiClient.post<CustomAffiliate>(`/admin/referral/affiliates/${userId}/disable`, payload ?? {})
   return data
@@ -62,8 +69,10 @@ async function restoreAffiliate(userId: number): Promise<CustomAffiliate> {
   return data
 }
 
-async function adjustAffiliate(userId: number, payload: { amount: number; remark?: string }): Promise<CustomAffiliate> {
-  const { data } = await apiClient.post<CustomAffiliate>(`/admin/referral/affiliates/${userId}/adjust`, payload)
+async function adjustAffiliate(userId: number, payload: { amount: number; remark?: string; idempotency_key: string }): Promise<CustomAffiliate> {
+  const { data } = await apiClient.post<CustomAffiliate>(`/admin/referral/affiliates/${userId}/adjust`, payload, {
+    headers: { 'Idempotency-Key': payload.idempotency_key }
+  })
   return data
 }
 
@@ -94,6 +103,28 @@ async function listCommissions(params?: {
   affiliate_user_id?: number
 }): Promise<PaginatedResponse<CustomReferralCommission>> {
   const { data } = await apiClient.get<PaginatedResponse<CustomReferralCommission>>('/admin/referral/commissions', { params })
+  return data
+}
+
+async function listCommissionJobs(params?: {
+  page?: number
+  page_size?: number
+  status?: string
+}): Promise<PaginatedResponse<CustomReferralCommissionJob>> {
+  const { data } = await apiClient.get<PaginatedResponse<CustomReferralCommissionJob>>('/admin/referral/commission-jobs', { params })
+  return data
+}
+
+async function reverseCommission(payload: {
+  order_id?: number
+  commission_id?: number
+  refund_amount: number
+  reason?: string
+  idempotency_key: string
+}): Promise<CustomReferralCommissionReversal> {
+  const { data } = await apiClient.post<CustomReferralCommissionReversal>('/admin/referral/commissions/reverse', payload, {
+    headers: { 'Idempotency-Key': payload.idempotency_key }
+  })
   return data
 }
 
@@ -152,6 +183,7 @@ export const adminReferralAPI = {
   updateSettings,
   listAffiliates,
   approveAffiliate,
+  updateAffiliateRate,
   rejectAffiliate,
   disableAffiliate,
   restoreAffiliate,
@@ -161,6 +193,8 @@ export const adminReferralAPI = {
   freezeWithdrawal,
   restoreWithdrawal,
   listCommissions,
+  listCommissionJobs,
+  reverseCommission,
   runSettlementBatch,
   listWithdrawals,
   listAffiliateBindings,

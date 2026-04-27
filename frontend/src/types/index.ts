@@ -153,6 +153,7 @@ export interface CustomReferralSummary {
   status: 'pending' | 'approved' | 'rejected' | 'disabled'
   invite_code: string
   rate?: number | null
+  min_withdraw_amount: number
   click_count: number
   bound_user_count: number
   paid_user_count: number
@@ -187,6 +188,51 @@ export interface CustomReferralCommission {
   reversed_at?: string | null
   reversed_reason: string
   created_at: string
+}
+
+export interface CustomReferralCommissionJob {
+  id: number
+  order_id: number
+  affiliate_id?: number
+  status: 'pending' | 'processing' | 'succeeded' | 'failed'
+  attempt_count: number
+  last_error?: string
+  locked_at?: string | null
+  succeeded_at?: string | null
+  failed_at?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CustomReferralUserCommission {
+  id: number
+  order_type: string
+  commission_amount: number
+  refunded_amount: number
+  status: 'pending' | 'available' | 'reversed'
+  settle_at: string
+  available_at?: string | null
+  reversed_at?: string | null
+  created_at: string
+}
+
+export interface CustomReferralCommissionReversal {
+  id: number
+  affiliate_id: number
+  commission_id: number
+  order_id: number
+  refund_amount: number
+  reverse_amount: number
+  delta_pending: number
+  delta_available: number
+  delta_frozen: number
+  delta_reversed: number
+  delta_debt: number
+  reason: string
+  external_ref_id: string
+  admin_user_id: number
+  created_at: string
+  already_processed?: boolean
 }
 
 export interface CustomReferralWithdrawal {
@@ -327,6 +373,7 @@ export interface PublicSettings {
   channel_monitor_enabled: boolean
   channel_monitor_default_interval_seconds: number
   available_channels_enabled: boolean
+  affiliate_enabled: boolean
 }
 
 export interface AuthResponse {

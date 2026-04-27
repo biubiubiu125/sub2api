@@ -28,6 +28,18 @@ const (
 	FieldPayAmount = "pay_amount"
 	// FieldFeeRate holds the string denoting the fee_rate field in the database.
 	FieldFeeRate = "fee_rate"
+	// FieldCommissionBaseAmount holds the string denoting the commission_base_amount field in the database.
+	FieldCommissionBaseAmount = "commission_base_amount"
+	// FieldCustomReferralAffiliateID holds the string denoting the custom_referral_affiliate_id field in the database.
+	FieldCustomReferralAffiliateID = "custom_referral_affiliate_id"
+	// FieldCustomReferralRate holds the string denoting the custom_referral_rate field in the database.
+	FieldCustomReferralRate = "custom_referral_rate"
+	// FieldCustomReferralCommissionStatus holds the string denoting the custom_referral_commission_status field in the database.
+	FieldCustomReferralCommissionStatus = "custom_referral_commission_status"
+	// FieldCustomReferralCommissionError holds the string denoting the custom_referral_commission_error field in the database.
+	FieldCustomReferralCommissionError = "custom_referral_commission_error"
+	// FieldCustomReferralCommissionAt holds the string denoting the custom_referral_commission_at field in the database.
+	FieldCustomReferralCommissionAt = "custom_referral_commission_at"
 	// FieldRechargeCode holds the string denoting the recharge_code field in the database.
 	FieldRechargeCode = "recharge_code"
 	// FieldOutTradeNo holds the string denoting the out_trade_no field in the database.
@@ -115,6 +127,12 @@ var Columns = []string{
 	FieldAmount,
 	FieldPayAmount,
 	FieldFeeRate,
+	FieldCommissionBaseAmount,
+	FieldCustomReferralAffiliateID,
+	FieldCustomReferralRate,
+	FieldCustomReferralCommissionStatus,
+	FieldCustomReferralCommissionError,
+	FieldCustomReferralCommissionAt,
 	FieldRechargeCode,
 	FieldOutTradeNo,
 	FieldPaymentType,
@@ -166,6 +184,14 @@ var (
 	UserNameValidator func(string) error
 	// DefaultFeeRate holds the default value on creation for the "fee_rate" field.
 	DefaultFeeRate float64
+	// DefaultCommissionBaseAmount holds the default value on creation for the "commission_base_amount" field.
+	DefaultCommissionBaseAmount float64
+	// DefaultCustomReferralRate holds the default value on creation for the "custom_referral_rate" field.
+	DefaultCustomReferralRate float64
+	// DefaultCustomReferralCommissionStatus holds the default value on creation for the "custom_referral_commission_status" field.
+	DefaultCustomReferralCommissionStatus string
+	// CustomReferralCommissionStatusValidator is a validator for the "custom_referral_commission_status" field. It is called by the builders before save.
+	CustomReferralCommissionStatusValidator func(string) error
 	// RechargeCodeValidator is a validator for the "recharge_code" field. It is called by the builders before save.
 	RechargeCodeValidator func(string) error
 	// DefaultOutTradeNo holds the default value on creation for the "out_trade_no" field.
@@ -247,6 +273,36 @@ func ByPayAmount(opts ...sql.OrderTermOption) OrderOption {
 // ByFeeRate orders the results by the fee_rate field.
 func ByFeeRate(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldFeeRate, opts...).ToFunc()
+}
+
+// ByCommissionBaseAmount orders the results by the commission_base_amount field.
+func ByCommissionBaseAmount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCommissionBaseAmount, opts...).ToFunc()
+}
+
+// ByCustomReferralAffiliateID orders the results by the custom_referral_affiliate_id field.
+func ByCustomReferralAffiliateID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCustomReferralAffiliateID, opts...).ToFunc()
+}
+
+// ByCustomReferralRate orders the results by the custom_referral_rate field.
+func ByCustomReferralRate(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCustomReferralRate, opts...).ToFunc()
+}
+
+// ByCustomReferralCommissionStatus orders the results by the custom_referral_commission_status field.
+func ByCustomReferralCommissionStatus(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCustomReferralCommissionStatus, opts...).ToFunc()
+}
+
+// ByCustomReferralCommissionError orders the results by the custom_referral_commission_error field.
+func ByCustomReferralCommissionError(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCustomReferralCommissionError, opts...).ToFunc()
+}
+
+// ByCustomReferralCommissionAt orders the results by the custom_referral_commission_at field.
+func ByCustomReferralCommissionAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldCustomReferralCommissionAt, opts...).ToFunc()
 }
 
 // ByRechargeCode orders the results by the recharge_code field.

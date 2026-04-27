@@ -9,7 +9,8 @@ export const useReferralStore = defineStore('referral', () => {
   const summary = ref<CustomReferralSummary | null>(null)
   const loading = ref(false)
   const loadedForUserId = ref<number | null>(null)
-  const canAccess = computed(() => profile.value?.status === 'approved')
+  const canAccess = computed(() => profile.value?.status === 'approved' || profile.value?.status === 'disabled')
+  const canWithdraw = computed(() => profile.value?.status === 'approved' && profile.value.withdrawal_enabled)
 
   function clear(): void {
     profile.value = null
@@ -31,7 +32,7 @@ export const useReferralStore = defineStore('referral', () => {
     loading.value = true
     try {
       profile.value = await referralAPI.getProfile()
-      if (profile.value?.status === 'approved') {
+      if (profile.value?.status === 'approved' || profile.value?.status === 'disabled') {
         summary.value = await referralAPI.getSummary()
       } else {
         summary.value = null
@@ -53,6 +54,7 @@ export const useReferralStore = defineStore('referral', () => {
     summary,
     loading,
     canAccess,
+    canWithdraw,
     clear,
     ensureLoaded
   }

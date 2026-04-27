@@ -53,6 +53,8 @@ const migrationsLockRetryInterval = 500 * time.Millisecond
 const nonTransactionalMigrationSuffix = "_notx.sql"
 const paymentOrdersOutTradeNoUniqueMigration = "120_enforce_payment_orders_out_trade_no_unique_notx.sql"
 const paymentOrdersOutTradeNoUniqueIndex = "paymentorder_out_trade_no_unique"
+const paymentOrdersTradeNoUniqueMigration = "138_enforce_payment_orders_trade_no_unique_notx.sql"
+const paymentOrdersTradeNoUniqueIndex = "paymentorder_payment_trade_no_unique"
 
 type migrationChecksumCompatibilityRule struct {
 	fileChecksum       string
@@ -258,13 +260,15 @@ func prepareNonTransactionalMigration(ctx context.Context, db *sql.DB, name stri
 	switch name {
 	case paymentOrdersOutTradeNoUniqueMigration:
 		return preparePaymentOrdersOutTradeNoUniqueMigration(ctx, db)
+	case paymentOrdersTradeNoUniqueMigration:
+		return preparePaymentOrdersTradeNoUniqueMigration(ctx, db)
 	default:
 		return nil
 	}
 }
 
 func preparePaymentOrdersOutTradeNoUniqueMigration(ctx context.Context, db *sql.DB) error {
-	duplicates, err := findDuplicatePaymentOrderOutTradeNos(ctx, db)
+	duplicates, err := findDuplicatePaymentOrderValues(ctx, db, "out_trade_no")
 	if err != nil {
 		return fmt.Errorf("precheck duplicate out_trade_no: %w", err)
 	}
@@ -290,16 +294,46 @@ func preparePaymentOrdersOutTradeNoUniqueMigration(ctx context.Context, db *sql.
 	return nil
 }
 
-func findDuplicatePaymentOrderOutTradeNos(ctx context.Context, db *sql.DB) ([]string, error) {
-	rows, err := db.QueryContext(ctx, `
-		SELECT out_trade_no, COUNT(*) AS duplicate_count
+func preparePaymentOrdersTradeNoUniqueMigration(ctx context.Context, db *sql.DB) error {
+	duplicates, err := findDuplicatePaymentOrderValues(ctx, db, "payment_trade_no")
+	if err != nil {
+		return fmt.Errorf("precheck duplicate payment_trade_no: %w", err)
+	}
+	if len(duplicates) > 0 {
+		return fmt.Errorf(
+			"duplicate payment_trade_no values block %s; remediate duplicates before retrying: %s",
+			paymentOrdersTradeNoUniqueMigration,
+			strings.Join(duplicates, ", "),
+		)
+	}
+
+	invalid, err := indexIsInvalid(ctx, db, paymentOrdersTradeNoUniqueIndex)
+	if err != nil {
+		return fmt.Errorf("check invalid index %s: %w", paymentOrdersTradeNoUniqueIndex, err)
+	}
+	if !invalid {
+		return nil
+	}
+
+	if _, err := db.ExecContext(ctx, fmt.Sprintf("DROP INDEX CONCURRENTLY IF EXISTS %s", paymentOrdersTradeNoUniqueIndex)); err != nil {
+		return fmt.Errorf("drop invalid index %s: %w", paymentOrdersTradeNoUniqueIndex, err)
+	}
+	return nil
+}
+
+func findDuplicatePaymentOrderValues(ctx context.Context, db *sql.DB, fieldName string) ([]string, error) {
+	if fieldName != "out_trade_no" && fieldName != "payment_trade_no" {
+		return nil, fmt.Errorf("unsupported payment_orders duplicate field %q", fieldName)
+	}
+	rows, err := db.QueryContext(ctx, fmt.Sprintf(`
+		SELECT %s, COUNT(*) AS duplicate_count
 		FROM payment_orders
-		WHERE out_trade_no <> ''
-		GROUP BY out_trade_no
+		WHERE %s <> ''
+		GROUP BY %s
 		HAVING COUNT(*) > 1
-		ORDER BY duplicate_count DESC, out_trade_no
+		ORDER BY duplicate_count DESC, %s
 		LIMIT 5
-	`)
+	`, fieldName, fieldName, fieldName, fieldName))
 	if err != nil {
 		return nil, err
 	}
@@ -309,12 +343,12 @@ func findDuplicatePaymentOrderOutTradeNos(ctx context.Context, db *sql.DB) ([]st
 
 	duplicates := make([]string, 0, 5)
 	for rows.Next() {
-		var outTradeNo string
+		var value string
 		var duplicateCount int
-		if err := rows.Scan(&outTradeNo, &duplicateCount); err != nil {
+		if err := rows.Scan(&value, &duplicateCount); err != nil {
 			return nil, err
 		}
-		duplicates = append(duplicates, fmt.Sprintf("%s (count=%d)", outTradeNo, duplicateCount))
+		duplicates = append(duplicates, fmt.Sprintf("%s (count=%d)", value, duplicateCount))
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

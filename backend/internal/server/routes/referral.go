@@ -1,15 +1,15 @@
 package routes
 
 import (
-	"net/http"
-	"path/filepath"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler"
+	ratelimit "github.com/Wei-Shaw/sub2api/internal/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/Wei-Shaw/sub2api/internal/setup"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 )
 
 func RegisterReferralRoutes(
@@ -19,13 +19,17 @@ func RegisterReferralRoutes(
 	jwtAuth middleware.JWTAuthMiddleware,
 	adminAuth middleware.AdminAuthMiddleware,
 	settingService *service.SettingService,
+	redisClient *redis.Client,
 ) {
 	if h == nil || h.Referral == nil || h.Admin == nil || h.Admin.Referral == nil {
 		return
 	}
 
-	r.StaticFS("/referral-assets", http.Dir(filepath.Join(setup.GetDataDir(), "public", "referral-assets")))
-	r.GET("/r/:code", h.Referral.CaptureReferral)
+	rateLimiter := ratelimit.NewRateLimiter(redisClient)
+	r.GET("/referral-assets/*path", h.Referral.ServeAsset)
+	r.GET("/r/:code", rateLimiter.LimitWithOptions("custom-referral-landing", 60, time.Minute, ratelimit.RateLimitOptions{
+		FailureMode: ratelimit.RateLimitFailClose,
+	}), h.Referral.CaptureReferral)
 
 	authenticated := v1.Group("")
 	authenticated.Use(gin.HandlerFunc(jwtAuth))
@@ -58,7 +62,10 @@ func RegisterReferralRoutes(
 			referral.GET("/affiliates", h.Admin.Referral.ListAffiliates)
 			referral.GET("/affiliates/:user_id/bindings", h.Admin.Referral.ListAffiliateBindings)
 			referral.GET("/commissions", h.Admin.Referral.ListCommissions)
+			referral.GET("/commission-jobs", h.Admin.Referral.ListCommissionJobs)
+			referral.POST("/commissions/reverse", h.Admin.Referral.ReverseCommission)
 			referral.POST("/affiliates/:user_id/approve", h.Admin.Referral.ApproveAffiliate)
+			referral.POST("/affiliates/:user_id/rate", h.Admin.Referral.SetAffiliateRateOverride)
 			referral.POST("/affiliates/:user_id/reject", h.Admin.Referral.RejectAffiliate)
 			referral.POST("/affiliates/:user_id/disable", h.Admin.Referral.DisableAffiliate)
 			referral.POST("/affiliates/:user_id/restore", h.Admin.Referral.RestoreAffiliate)

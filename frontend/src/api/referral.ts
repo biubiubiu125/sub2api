@@ -1,8 +1,8 @@
 import { apiClient } from './client'
 import type {
   CustomAffiliate,
-  CustomReferralCommission,
   CustomReferralSummary,
+  CustomReferralUserCommission,
   CustomReferralWithdrawal,
   PaginatedResponse
 } from '@/types'
@@ -40,8 +40,8 @@ async function listCommissions(params?: {
   page?: number
   page_size?: number
   status?: string
-}): Promise<PaginatedResponse<CustomReferralCommission>> {
-  const { data } = await apiClient.get<PaginatedResponse<CustomReferralCommission>>('/ext/referral/commissions', { params })
+}): Promise<PaginatedResponse<CustomReferralUserCommission>> {
+  const { data } = await apiClient.get<PaginatedResponse<CustomReferralUserCommission>>('/ext/referral/commissions', { params })
   return data
 }
 
@@ -54,8 +54,10 @@ async function listWithdrawals(params?: {
   return data
 }
 
-async function createWithdrawal(payload: ReferralWithdrawalCreateRequest): Promise<CustomReferralWithdrawal> {
-  const { data } = await apiClient.post<CustomReferralWithdrawal>('/ext/referral/withdrawals', payload)
+async function createWithdrawal(payload: ReferralWithdrawalCreateRequest, idempotencyKey?: string): Promise<CustomReferralWithdrawal> {
+  const { data } = await apiClient.post<CustomReferralWithdrawal>('/ext/referral/withdrawals', payload, {
+    headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined
+  })
   return data
 }
 

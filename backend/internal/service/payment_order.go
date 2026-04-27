@@ -16,6 +16,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	"github.com/Wei-Shaw/sub2api/internal/payment/provider"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moneyx"
 )
 
 // --- Order Creation ---
@@ -59,6 +60,7 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	feeRate := cfg.RechargeFeeRate
 	payAmountStr := payment.CalculatePayAmount(limitAmount, feeRate)
 	payAmount, _ := strconv.ParseFloat(payAmountStr, 64)
+	commissionBaseAmount := customReferralCommissionBaseSnapshot(req, plan, limitAmount)
 	sel, err := s.selectCreateOrderInstance(ctx, req, cfg, payAmount)
 	if err != nil {
 		return nil, err
@@ -73,7 +75,7 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if oauthResp != nil {
 		return oauthResp, nil
 	}
-	order, err := s.createOrderInTx(ctx, req, user, plan, cfg, orderAmount, limitAmount, feeRate, payAmount, sel)
+	order, err := s.createOrderInTx(ctx, req, user, plan, cfg, orderAmount, limitAmount, feeRate, payAmount, commissionBaseAmount, sel)
 	if err != nil {
 		return nil, err
 	}
@@ -122,16 +124,29 @@ func (s *PaymentService) validateSubOrder(ctx context.Context, req CreateOrderRe
 	return plan, nil
 }
 
-func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderRequest, user *User, plan *dbent.SubscriptionPlan, cfg *PaymentConfig, orderAmount, limitAmount, feeRate, payAmount float64, sel *payment.InstanceSelection) (*dbent.PaymentOrder, error) {
+func customReferralCommissionBaseSnapshot(req CreateOrderRequest, plan *dbent.SubscriptionPlan, payableAmount float64) float64 {
+	// payableAmount is a legacy float64 boundary value; moneyx performs the
+	// actual currency rounding before the snapshot is persisted.
+	if plan != nil {
+		return moneyx.Currency(plan.Price).InexactFloat64()
+	}
+	if req.OrderType == payment.OrderTypeBalance {
+		return moneyx.Currency(payableAmount).InexactFloat64()
+	}
+	return moneyx.Currency(payableAmount).InexactFloat64()
+}
+
+func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderRequest, user *User, plan *dbent.SubscriptionPlan, cfg *PaymentConfig, orderAmount, limitAmount, feeRate, payAmount, commissionBaseAmount float64, sel *payment.InstanceSelection) (*dbent.PaymentOrder, error) {
 	tx, err := s.entClient.Tx(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := s.checkPendingLimit(ctx, tx, req.UserID, cfg.MaxPendingOrders); err != nil {
+	txCtx := dbent.NewTxContext(ctx, tx)
+	if err := s.checkPendingLimit(txCtx, tx, req.UserID, cfg.MaxPendingOrders); err != nil {
 		return nil, err
 	}
-	if err := s.checkDailyLimit(ctx, tx, req.UserID, limitAmount, cfg.DailyLimit); err != nil {
+	if err := s.checkDailyLimit(txCtx, tx, req.UserID, limitAmount, cfg.DailyLimit); err != nil {
 		return nil, err
 	}
 	tm := cfg.OrderTimeoutMin
@@ -139,9 +154,13 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 		tm = defaultOrderTimeoutMin
 	}
 	exp := time.Now().Add(time.Duration(tm) * time.Minute)
-	outTradeNo, err := s.allocateOutTradeNo(ctx, tx)
+	outTradeNo, err := s.allocateOutTradeNo(txCtx, tx)
 	if err != nil {
 		return nil, err
+	}
+	referralSnapshot, err := s.snapshotCustomReferralForOrder(txCtx, req.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("snapshot custom referral: %w", err)
 	}
 	providerSnapshot := buildPaymentOrderProviderSnapshot(sel, req)
 	selectedInstanceID := ""
@@ -158,6 +177,7 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 		SetAmount(orderAmount).
 		SetPayAmount(payAmount).
 		SetFeeRate(feeRate).
+		SetCommissionBaseAmount(commissionBaseAmount).
 		SetRechargeCode("").
 		SetOutTradeNo(outTradeNo).
 		SetPaymentType(req.PaymentType).
@@ -179,15 +199,19 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 	if providerSnapshot != nil {
 		b.SetProviderSnapshot(providerSnapshot)
 	}
+	if referralSnapshot != nil && referralSnapshot.AffiliateID > 0 && referralSnapshot.Rate > 0 {
+		b.SetCustomReferralAffiliateID(referralSnapshot.AffiliateID).
+			SetCustomReferralRate(referralSnapshot.Rate)
+	}
 	if plan != nil {
 		b.SetPlanID(plan.ID).SetSubscriptionGroupID(plan.GroupID).SetSubscriptionDays(psComputeValidityDays(plan.ValidityDays, plan.ValidityUnit))
 	}
-	order, err := b.Save(ctx)
+	order, err := b.Save(txCtx)
 	if err != nil {
 		return nil, fmt.Errorf("create order: %w", err)
 	}
 	code := fmt.Sprintf("PAY-%d-%d", order.ID, time.Now().UnixNano()%100000)
-	order, err = tx.PaymentOrder.UpdateOneID(order.ID).SetRechargeCode(code).Save(ctx)
+	order, err = tx.PaymentOrder.UpdateOneID(order.ID).SetRechargeCode(code).Save(txCtx)
 	if err != nil {
 		return nil, fmt.Errorf("set recharge code: %w", err)
 	}
@@ -195,6 +219,13 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 		return nil, fmt.Errorf("commit order transaction: %w", err)
 	}
 	return order, nil
+}
+
+func (s *PaymentService) snapshotCustomReferralForOrder(ctx context.Context, userID int64) (*CustomReferralOrderSnapshot, error) {
+	if s == nil || s.customReferralService == nil || userID <= 0 {
+		return nil, nil
+	}
+	return s.customReferralService.SnapshotOrderAffiliate(ctx, userID)
 }
 
 func (s *PaymentService) allocateOutTradeNo(ctx context.Context, tx *dbent.Tx) (string, error) {
@@ -295,17 +326,20 @@ func (s *PaymentService) checkDailyLimit(ctx context.Context, tx *dbent.Tx, user
 	if err != nil {
 		return fmt.Errorf("query daily usage: %w", err)
 	}
-	var used float64
+	usedDec := moneyx.Currency(0)
 	for _, o := range orders {
 		if o.OrderType == payment.OrderTypeBalance {
-			used += o.PayAmount
+			usedDec = usedDec.Add(moneyx.Currency(o.PayAmount))
 			continue
 		}
-		used += o.Amount
+		usedDec = usedDec.Add(moneyx.Currency(o.Amount))
 	}
-	if used+amount > limit {
+	amountDec := moneyx.Currency(amount)
+	limitDec := moneyx.Currency(limit)
+	if usedDec.Add(amountDec).GreaterThan(limitDec) {
+		remaining := moneyx.NonNegative(limitDec.Sub(usedDec))
 		return infraerrors.TooManyRequests("DAILY_LIMIT_EXCEEDED", "daily_limit_exceeded").
-			WithMetadata(map[string]string{"remaining": fmt.Sprintf("%.2f", math.Max(0, limit-used))})
+			WithMetadata(map[string]string{"remaining": remaining.StringFixed(2)})
 	}
 	return nil
 }

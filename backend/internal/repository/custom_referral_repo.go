@@ -4,15 +4,17 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"strings"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moneyx"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
+	"github.com/shopspring/decimal"
 )
 
 const (
@@ -73,7 +75,7 @@ INSERT INTO custom_affiliates (
 			if _, err := exec.ExecContext(txCtx, `
 UPDATE custom_affiliates
 SET status = $2,
-    rate_override = COALESCE($3, rate_override),
+    rate_override = $3,
     acquisition_enabled = TRUE,
     settlement_enabled = TRUE,
     withdrawal_enabled = TRUE,
@@ -95,11 +97,21 @@ WHERE user_id = $1`,
 		}
 
 		if _, err := exec.ExecContext(txCtx, `
-INSERT INTO custom_commission_accounts (affiliate_id, created_at, updated_at)
-SELECT id, NOW(), NOW()
-FROM custom_affiliates
-WHERE user_id = $1
-ON CONFLICT (affiliate_id) DO NOTHING`, userID); err != nil {
+INSERT INTO custom_commission_accounts (affiliate_id, user_id, created_at, updated_at)
+SELECT a.id, a.user_id, NOW(), NOW()
+FROM custom_affiliates a
+WHERE a.user_id = $1
+  AND NOT EXISTS (
+    SELECT 1
+    FROM custom_commission_accounts ca
+    WHERE ca.affiliate_id = a.id
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM custom_commission_accounts ca
+    WHERE ca.user_id = a.user_id
+  )
+ON CONFLICT DO NOTHING`, userID); err != nil {
 			return err
 		}
 
@@ -108,6 +120,60 @@ ON CONFLICT (affiliate_id) DO NOTHING`, userID); err != nil {
 			return err
 		}
 		out = item
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *customReferralRepository) SetAffiliateRateOverride(ctx context.Context, userID int64, rateOverride *float64, audit service.CustomReferralAdminAuditContext) (*service.CustomAffiliate, error) {
+	var out *service.CustomAffiliate
+	err := r.withTx(ctx, func(txCtx context.Context, exec sqlQueryExecutor) error {
+		oldItem, err := r.getAffiliateByUserIDWithExecutor(txCtx, exec, userID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return service.ErrCustomReferralAffiliateNotFound
+			}
+			return err
+		}
+		var rate any
+		if rateOverride != nil {
+			rate = *rateOverride
+		}
+		res, err := exec.ExecContext(txCtx, `
+UPDATE custom_affiliates
+SET rate_override = $2,
+    updated_at = NOW()
+WHERE user_id = $1`,
+			userID,
+			rate,
+		)
+		if err != nil {
+			return err
+		}
+		affected, _ := res.RowsAffected()
+		if affected == 0 {
+			return service.ErrCustomReferralAffiliateNotFound
+		}
+		item, err := r.getAffiliateByUserIDWithExecutor(txCtx, exec, userID)
+		if err != nil {
+			return err
+		}
+		out = item
+		if audit.OldValue == nil {
+			audit.OldValue = map[string]any{"rate_override": oldItem.RateOverride}
+		}
+		if audit.NewValue == nil {
+			audit.NewValue = map[string]any{"rate_override": item.RateOverride}
+		}
+		if strings.TrimSpace(audit.Action) == "" {
+			audit.Action = "affiliate_rate_override"
+		}
+		if err := r.recordAdminAuditWithExecutor(txCtx, exec, userID, item.ID, audit); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
@@ -147,6 +213,9 @@ INSERT INTO custom_affiliates (
 			if existing.Status == service.CustomAffiliateStatusApproved {
 				return service.ErrCustomReferralAlreadyApproved
 			}
+			if existing.Status == service.CustomAffiliateStatusDisabled {
+				return service.ErrCustomReferralAffiliateDisabled
+			}
 			if _, err := exec.ExecContext(txCtx, `
 UPDATE custom_affiliates
 SET status = $2,
@@ -184,9 +253,22 @@ WHERE user_id = $1`,
 	return out, nil
 }
 
-func (r *customReferralRepository) SetAffiliateStatus(ctx context.Context, userID, adminID int64, status string, acquisitionEnabled, settlementEnabled, withdrawalEnabled bool, reason string) (*service.CustomAffiliate, error) {
+func (r *customReferralRepository) SetAffiliateStatus(ctx context.Context, userID, adminID int64, status string, acquisitionEnabled, settlementEnabled, withdrawalEnabled bool, reason string, audit service.CustomReferralAdminAuditContext) (*service.CustomAffiliate, error) {
 	var out *service.CustomAffiliate
 	err := r.withTx(ctx, func(txCtx context.Context, exec sqlQueryExecutor) error {
+		oldItem, err := r.getAffiliateByUserIDWithExecutor(txCtx, exec, userID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return service.ErrCustomReferralAffiliateNotFound
+			}
+			return err
+		}
+		var disabledBy any
+		var disabledAt any
+		if status == service.CustomAffiliateStatusDisabled {
+			disabledBy = adminIDOrNil(adminID)
+			disabledAt = time.Now()
+		}
 		res, err := exec.ExecContext(txCtx, `
 UPDATE custom_affiliates
 SET status = $2,
@@ -194,8 +276,8 @@ SET status = $2,
     settlement_enabled = $4,
     withdrawal_enabled = $5,
     risk_reason = $6,
-    disabled_by = CASE WHEN $2 = 'disabled' THEN $7 ELSE NULL END,
-    disabled_at = CASE WHEN $2 = 'disabled' THEN NOW() ELSE NULL END,
+    disabled_by = $7,
+    disabled_at = $8,
     updated_at = NOW()
 WHERE user_id = $1`,
 			userID,
@@ -204,7 +286,8 @@ WHERE user_id = $1`,
 			settlementEnabled,
 			withdrawalEnabled,
 			strings.TrimSpace(reason),
-			adminIDOrNil(adminID),
+			disabledBy,
+			disabledAt,
 		)
 		if err != nil {
 			return err
@@ -218,6 +301,24 @@ WHERE user_id = $1`,
 			return err
 		}
 		out = item
+		if audit.OldValue == nil {
+			audit.OldValue = customAffiliateStatusAuditValue(oldItem)
+		}
+		if audit.NewValue == nil {
+			audit.NewValue = customAffiliateStatusAuditValue(item)
+		}
+		if strings.TrimSpace(audit.Action) == "" {
+			audit.Action = "affiliate_status_update"
+		}
+		if audit.AdminUserID <= 0 {
+			audit.AdminUserID = adminID
+		}
+		if audit.Reason == "" {
+			audit.Reason = strings.TrimSpace(reason)
+		}
+		if err := r.recordAdminAuditWithExecutor(txCtx, exec, userID, item.ID, audit); err != nil {
+			return err
+		}
 		return nil
 	})
 	if err != nil {
@@ -226,30 +327,109 @@ WHERE user_id = $1`,
 	return out, nil
 }
 
-func (r *customReferralRepository) AdjustAffiliateCommission(ctx context.Context, userID, adminID int64, delta float64, remark string) (*service.CustomAffiliate, error) {
+func (r *customReferralRepository) AdjustAffiliateCommission(ctx context.Context, input service.CustomReferralAdjustInput) (*service.CustomAffiliate, error) {
+	if strings.TrimSpace(input.IdempotencyKey) == "" {
+		return nil, service.ErrCustomReferralInvalidIdempotency
+	}
 	var out *service.CustomAffiliate
 	err := r.withTx(ctx, func(txCtx context.Context, exec sqlQueryExecutor) error {
-		affiliate, err := r.getAffiliateByUserIDWithExecutor(txCtx, exec, userID)
+		affiliate, err := r.getAffiliateByUserIDWithExecutor(txCtx, exec, input.UserID)
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return service.ErrCustomReferralAffiliateNotFound
 			}
 			return err
 		}
+		externalRefID := "admin_adjust:" + strings.TrimSpace(input.IdempotencyKey)
+		existingRows, err := exec.QueryContext(txCtx, `
+SELECT 1
+FROM custom_commission_ledger
+WHERE external_ref_id = $1
+  AND type IN ('commission_adjust_increase', 'commission_adjust_decrease')
+LIMIT 1
+FOR UPDATE`, externalRefID)
+		if err != nil {
+			return err
+		}
+		if existingRows.Next() {
+			_ = existingRows.Close()
+			out, err = r.getAffiliateByUserIDWithExecutor(txCtx, exec, input.UserID)
+			return err
+		}
+		if err := existingRows.Close(); err != nil {
+			return err
+		}
 
 		if _, err := exec.ExecContext(txCtx, `
-INSERT INTO custom_commission_accounts (affiliate_id, created_at, updated_at)
-VALUES ($1, NOW(), NOW())
-ON CONFLICT (affiliate_id) DO NOTHING`, affiliate.ID); err != nil {
+INSERT INTO custom_commission_accounts (affiliate_id, user_id, created_at, updated_at)
+SELECT $1, $2, NOW(), NOW()
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM custom_commission_accounts ca
+    WHERE ca.affiliate_id = $1
+)
+  AND NOT EXISTS (
+    SELECT 1
+    FROM custom_commission_accounts ca
+    WHERE ca.user_id = $2
+)
+ON CONFLICT DO NOTHING`, affiliate.ID, affiliate.UserID); err != nil {
 			return err
+		}
+
+		accountRows, err := exec.QueryContext(txCtx, `
+SELECT pending_amount::double precision,
+       available_amount::double precision,
+       frozen_amount::double precision,
+       debt_amount::double precision
+FROM custom_commission_accounts
+WHERE affiliate_id = $1
+FOR UPDATE`, affiliate.ID)
+		if err != nil {
+			return err
+		}
+		pendingAmount := 0.0
+		availableAmount := 0.0
+		frozenAmount := 0.0
+		debtAmount := 0.0
+		if accountRows.Next() {
+			if err := accountRows.Scan(&pendingAmount, &availableAmount, &frozenAmount, &debtAmount); err != nil {
+				_ = accountRows.Close()
+				return err
+			}
+		}
+		if err := accountRows.Close(); err != nil {
+			return err
+		}
+
+		deltaDec := input.DeltaDecimal
+		if deltaDec.IsZero() {
+			deltaDec = moneyx.Commission(input.Delta)
+		}
+		deltaDec = deltaDec.Round(moneyx.ScaleCommission)
+		availableDeltaDec := moneyx.Commission(0)
+		debtDeltaDec := moneyx.Commission(0)
+		if deltaDec.GreaterThan(moneyx.Commission(0)) {
+			debtAmountDec := moneyx.NonNegative(moneyx.Commission(debtAmount))
+			debtRepaidDec := moneyx.Min(deltaDec, debtAmountDec)
+			availableDeltaDec = deltaDec.Sub(debtRepaidDec).Round(moneyx.ScaleCommission)
+			debtDeltaDec = debtRepaidDec.Neg().Round(moneyx.ScaleCommission)
+		} else {
+			requestedDec := deltaDec.Neg().Round(moneyx.ScaleCommission)
+			availableAmountDec := moneyx.NonNegative(moneyx.Commission(availableAmount))
+			availableDecreaseDec := moneyx.Min(requestedDec, availableAmountDec)
+			availableDeltaDec = availableDecreaseDec.Neg().Round(moneyx.ScaleCommission)
+			debtDeltaDec = requestedDec.Sub(availableDecreaseDec).Round(moneyx.ScaleCommission)
 		}
 
 		res, err := exec.ExecContext(txCtx, `
 UPDATE custom_commission_accounts
 SET available_amount = available_amount + $2,
+    debt_amount = debt_amount + $3,
     updated_at = NOW()
 WHERE affiliate_id = $1
-  AND available_amount + $2 >= 0`, affiliate.ID, delta)
+  AND available_amount + $2 >= -0.00000001
+  AND debt_amount + $3 >= -0.00000001`, affiliate.ID, availableDeltaDec.InexactFloat64(), debtDeltaDec.InexactFloat64())
 		if err != nil {
 			return err
 		}
@@ -259,25 +439,85 @@ WHERE affiliate_id = $1
 		}
 
 		ledgerType := "commission_adjust_increase"
-		if delta < 0 {
+		if deltaDec.IsNegative() {
 			ledgerType = "commission_adjust_decrease"
 		}
 		if _, err := exec.ExecContext(txCtx, `
 INSERT INTO custom_commission_ledger (
     affiliate_id, type, ref_type, ref_id, external_ref_id,
-    delta_available, remark, operator, created_at
-) VALUES ($1, $2, 'affiliate', $3, $4, $5, $6, 'admin', NOW())`,
+    delta_available, delta_debt, remark, operator, created_at
+) VALUES ($1, $2, 'affiliate', $3, $4, $5, $6, $7, $8, NOW())`,
 			affiliate.ID,
 			ledgerType,
 			fmt.Sprintf("%d", affiliate.ID),
-			fmt.Sprintf("adjust:%d:%0.8f", affiliate.ID, delta),
-			delta,
-			strings.TrimSpace(remark),
+			externalRefID,
+			availableDeltaDec.InexactFloat64(),
+			debtDeltaDec.InexactFloat64(),
+			strings.TrimSpace(input.Remark),
+			fmt.Sprintf("admin:%d", input.AdminUserID),
 		); err != nil {
+			if isPQUniqueViolation(err) {
+				out, err = r.getAffiliateByUserIDWithExecutor(txCtx, exec, input.UserID)
+				return err
+			}
 			return err
 		}
 
-		out, err = r.getAffiliateByUserIDWithExecutor(txCtx, exec, userID)
+		newAccountRows, err := exec.QueryContext(txCtx, `
+SELECT pending_amount::double precision,
+       available_amount::double precision,
+       frozen_amount::double precision,
+       debt_amount::double precision
+FROM custom_commission_accounts
+WHERE affiliate_id = $1`, affiliate.ID)
+		if err != nil {
+			return err
+		}
+		newPendingAmount := pendingAmount
+		newAvailableAmount := availableAmount
+		newFrozenAmount := frozenAmount
+		newDebtAmount := debtAmount
+		if newAccountRows.Next() {
+			if err := newAccountRows.Scan(&newPendingAmount, &newAvailableAmount, &newFrozenAmount, &newDebtAmount); err != nil {
+				_ = newAccountRows.Close()
+				return err
+			}
+		}
+		if err := newAccountRows.Close(); err != nil {
+			return err
+		}
+		newValue := map[string]any{
+			"pending_amount":   moneyx.Commission(newPendingAmount).InexactFloat64(),
+			"available_amount": moneyx.Commission(newAvailableAmount).InexactFloat64(),
+			"frozen_amount":    moneyx.Commission(newFrozenAmount).InexactFloat64(),
+			"debt_amount":      moneyx.Commission(newDebtAmount).InexactFloat64(),
+		}
+		newValue["delta"] = deltaDec.InexactFloat64()
+		newValue["available_delta"] = availableDeltaDec.InexactFloat64()
+		newValue["debt_delta"] = debtDeltaDec.InexactFloat64()
+		newValue["idempotency_key"] = strings.TrimSpace(input.IdempotencyKey)
+		audit := input.Audit
+		audit.Action = strings.TrimSpace(audit.Action)
+		if audit.Action == "" {
+			audit.Action = "affiliate_commission_adjust"
+		}
+		if audit.AdminUserID <= 0 {
+			audit.AdminUserID = input.AdminUserID
+		}
+		if audit.Reason == "" {
+			audit.Reason = strings.TrimSpace(input.Remark)
+		}
+		audit.OldValue = map[string]any{
+			"pending_amount":   moneyx.Commission(pendingAmount).InexactFloat64(),
+			"available_amount": moneyx.Commission(availableAmount).InexactFloat64(),
+			"frozen_amount":    moneyx.Commission(frozenAmount).InexactFloat64(),
+			"debt_amount":      moneyx.Commission(debtAmount).InexactFloat64(),
+		}
+		audit.NewValue = newValue
+		if err := r.recordAdminAuditWithExecutor(txCtx, exec, input.UserID, affiliate.ID, audit); err != nil {
+			return err
+		}
+		out, err = r.getAffiliateByUserIDWithExecutor(txCtx, exec, input.UserID)
 		return err
 	})
 	if err != nil {
@@ -306,7 +546,7 @@ SELECT a.id,
        COALESCE(u.username, ''),
        a.invite_code,
        a.status,
-       a.source_type,
+       COALESCE(a.source_type, 'admin_created'),
        a.rate_override::double precision,
        a.acquisition_enabled,
        a.settlement_enabled,
@@ -343,7 +583,7 @@ SELECT a.id,
        COALESCE(u.username, ''),
        a.invite_code,
        a.status,
-       a.source_type,
+       COALESCE(a.source_type, 'admin_created'),
        a.rate_override::double precision,
        a.acquisition_enabled,
        a.settlement_enabled,
@@ -355,7 +595,8 @@ SELECT a.id,
 FROM custom_affiliates a
 LEFT JOIN users u ON u.id = a.user_id
 WHERE a.invite_code = $1
-  AND a.status = $2`, strings.ToUpper(strings.TrimSpace(code)), service.CustomAffiliateStatusApproved)
+  AND a.status = $2
+  AND u.status = $3`, strings.ToUpper(strings.TrimSpace(code)), service.CustomAffiliateStatusApproved, service.StatusActive)
 	if err != nil {
 		return nil, err
 	}
@@ -369,26 +610,147 @@ WHERE a.invite_code = $1
 	return scanCustomAffiliate(rows)
 }
 
-func (r *customReferralRepository) RecordReferralClick(ctx context.Context, affiliateID int64, inviteCode, referer, landingPath string, clickedAt time.Time) error {
+func ensureAffiliateUserActive(ctx context.Context, exec sqlQueryExecutor, affiliateID int64) error {
+	rows, err := exec.QueryContext(ctx, `
+SELECT u.status
+FROM custom_affiliates a
+JOIN users u ON u.id = a.user_id
+WHERE a.id = $1
+FOR UPDATE`, affiliateID)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		return service.ErrCustomReferralAffiliateNotFound
+	}
+	var status string
+	if err := rows.Scan(&status); err != nil {
+		return err
+	}
+	if status != service.StatusActive {
+		return service.ErrCustomReferralWithdrawDisabled
+	}
+	return nil
+}
+
+func ensureWithdrawalAffiliateUserActive(ctx context.Context, exec sqlQueryExecutor, withdrawalID int64) error {
+	rows, err := exec.QueryContext(ctx, `
+SELECT u.status
+FROM custom_commission_withdrawals w
+JOIN custom_affiliates a ON a.id = w.affiliate_id
+JOIN users u ON u.id = a.user_id
+WHERE w.id = $1
+FOR UPDATE`, withdrawalID)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		return service.ErrCustomReferralWithdrawalNotFound
+	}
+	var status string
+	if err := rows.Scan(&status); err != nil {
+		return err
+	}
+	if status != service.StatusActive {
+		return service.ErrCustomReferralWithdrawDisabled
+	}
+	return nil
+}
+
+func (r *customReferralRepository) RecordReferralClick(ctx context.Context, affiliateID int64, inviteCode string, click service.CustomReferralClickInput) error {
 	exec := txAwareSQLExecutor(ctx, r.sql, r.client)
 	if exec == nil {
 		return fmt.Errorf("custom referral sql executor is not configured")
 	}
+	if click.ClickedAt.IsZero() {
+		click.ClickedAt = time.Now()
+	}
 	_, err := exec.ExecContext(ctx, `
-INSERT INTO custom_referral_clicks (affiliate_id, invite_code, referer, landing_path, created_at)
-VALUES ($1, $2, $3, $4, $5)`,
+INSERT INTO custom_referral_clicks (affiliate_id, invite_code, referer, landing_path, ip_hash, ua_hash, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		affiliateID,
 		strings.ToUpper(strings.TrimSpace(inviteCode)),
-		strings.TrimSpace(referer),
-		strings.TrimSpace(landingPath),
-		clickedAt,
+		strings.TrimSpace(click.Referer),
+		strings.TrimSpace(click.LandingPath),
+		strings.TrimSpace(click.IPHash),
+		strings.TrimSpace(click.UserAgentHash),
+		click.ClickedAt,
 	)
 	return err
+}
+
+func (r *customReferralRepository) InviteeInInviterAncestorChain(ctx context.Context, inviteeUserID, inviterUserID int64, maxDepth int) (bool, error) {
+	if inviteeUserID <= 0 || inviterUserID <= 0 {
+		return false, nil
+	}
+	if inviteeUserID == inviterUserID {
+		return true, nil
+	}
+	if maxDepth <= 0 {
+		maxDepth = 64
+	}
+	exec := txAwareSQLExecutor(ctx, r.sql, r.client)
+	if exec == nil {
+		return false, fmt.Errorf("custom referral sql executor is not configured")
+	}
+	rows, err := exec.QueryContext(ctx, `
+WITH RECURSIVE ancestors(user_id, depth, path) AS (
+    SELECT b.inviter_user_id, 1, ARRAY[b.invitee_user_id, b.inviter_user_id]
+    FROM custom_referral_bindings b
+    WHERE b.invitee_user_id = $1
+    UNION ALL
+    SELECT b.inviter_user_id, ancestors.depth + 1, ancestors.path || b.inviter_user_id
+    FROM custom_referral_bindings b
+    JOIN ancestors ON b.invitee_user_id = ancestors.user_id
+    WHERE ancestors.depth < $3
+      AND NOT b.inviter_user_id = ANY(ancestors.path)
+)
+SELECT
+    EXISTS(SELECT 1 FROM ancestors WHERE user_id = $2),
+    COALESCE(MAX(depth), 0)
+FROM ancestors`, inviterUserID, inviteeUserID, maxDepth)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	var found bool
+	var depth int
+	if err := rows.Scan(&found, &depth); err != nil {
+		return false, err
+	}
+	if found {
+		return true, nil
+	}
+	if depth >= maxDepth {
+		return false, service.ErrCustomReferralChainTooDeep
+	}
+	return false, nil
 }
 
 func (r *customReferralRepository) BindInvitee(ctx context.Context, inviteeUserID, affiliateID, inviterUserID int64, bindSource, bindCode string, boundAt time.Time) (bool, error) {
 	var bound bool
 	err := r.withTx(ctx, func(txCtx context.Context, exec sqlQueryExecutor) error {
+		cyclic, err := r.InviteeInInviterAncestorChain(txCtx, inviteeUserID, inviterUserID, 64)
+		if err != nil {
+			return err
+		}
+		if cyclic {
+			return service.ErrCustomReferralCycleInvite
+		}
 		rows, err := exec.QueryContext(txCtx, `SELECT invitee_user_id FROM custom_referral_bindings WHERE invitee_user_id = $1`, inviteeUserID)
 		if err != nil {
 			return err
@@ -429,17 +791,59 @@ INSERT INTO custom_referral_bindings (
 	return bound, nil
 }
 
-func (r *customReferralRepository) CreatePendingCommissionForOrder(ctx context.Context, order service.CustomReferralOrderInput, defaultRate float64, freezeDays int) (float64, error) {
+func (r *customReferralRepository) SnapshotOrderAffiliate(ctx context.Context, userID int64, defaultRate float64) (*service.CustomReferralOrderSnapshot, error) {
+	if userID <= 0 || defaultRate <= 0 {
+		return nil, nil
+	}
+	exec := txAwareSQLExecutor(ctx, r.sql, r.client)
+	if exec == nil {
+		return nil, fmt.Errorf("custom referral tx executor is not configured")
+	}
+	rows, err := exec.QueryContext(ctx, `
+SELECT b.affiliate_id,
+       COALESCE(a.rate_override, $2)::double precision
+FROM custom_referral_bindings b
+JOIN custom_affiliates a ON a.id = b.affiliate_id
+JOIN users inviter ON inviter.id = a.user_id
+WHERE b.invitee_user_id = $1
+  AND a.status = $3
+  AND a.acquisition_enabled = TRUE
+  AND a.settlement_enabled = TRUE
+  AND inviter.status = $4
+LIMIT 1`, userID, defaultRate, service.CustomAffiliateStatusApproved, service.StatusActive)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+	var snapshot service.CustomReferralOrderSnapshot
+	if err := rows.Scan(&snapshot.AffiliateID, &snapshot.Rate); err != nil {
+		return nil, err
+	}
+	if snapshot.AffiliateID <= 0 || snapshot.Rate <= 0 {
+		return nil, nil
+	}
+	snapshot.RateDecimal = moneyx.Rate(snapshot.Rate)
+	snapshot.Rate = snapshot.RateDecimal.InexactFloat64()
+	return &snapshot, nil
+}
+
+func (r *customReferralRepository) CreatePendingCommissionForOrder(ctx context.Context, order service.CustomReferralOrderInput, freezeDays int) (float64, error) {
 	var applied float64
 	err := r.withTx(ctx, func(txCtx context.Context, exec sqlQueryExecutor) error {
 		rows, err := exec.QueryContext(txCtx, `
-SELECT b.affiliate_id,
-       b.inviter_user_id,
-       a.rate_override::double precision,
-       a.settlement_enabled
-FROM custom_referral_bindings b
-JOIN custom_affiliates a ON a.id = b.affiliate_id
-WHERE b.invitee_user_id = $1`, order.UserID)
+SELECT a.user_id
+FROM custom_affiliates a
+JOIN users inviter ON inviter.id = a.user_id
+WHERE a.id = $1
+  AND a.status = $2
+  AND inviter.status = $3
+FOR UPDATE`, order.AffiliateID, service.CustomAffiliateStatusApproved, service.StatusActive)
 		if err != nil {
 			return err
 		}
@@ -447,32 +851,34 @@ WHERE b.invitee_user_id = $1`, order.UserID)
 			_ = rows.Close()
 			return nil
 		}
-		var affiliateID int64
 		var inviterUserID int64
-		var override sql.NullFloat64
-		var settlementEnabled bool
-		if err := rows.Scan(&affiliateID, &inviterUserID, &override, &settlementEnabled); err != nil {
+		if err := rows.Scan(&inviterUserID); err != nil {
 			_ = rows.Close()
 			return err
 		}
 		if err := rows.Close(); err != nil {
 			return err
 		}
-		if !settlementEnabled {
-			return nil
-		}
 
-		rate := defaultRate
-		if override.Valid {
-			rate = override.Float64
+		affiliateID := order.AffiliateID
+		rateDec := order.RateDecimal
+		if rateDec.IsZero() {
+			rateDec = moneyx.Rate(order.Rate)
 		}
-		if rate <= 0 || order.BaseAmount <= 0 {
+		rateDec = rateDec.Round(moneyx.ScaleRate)
+		baseAmountDec := order.BaseAmountDecimal
+		if baseAmountDec.IsZero() {
+			baseAmountDec = moneyx.Commission(order.BaseAmount)
+		}
+		baseAmountDec = baseAmountDec.Round(moneyx.ScaleCommission)
+		if !rateDec.GreaterThan(decimal.Zero) || !baseAmountDec.GreaterThan(decimal.Zero) {
 			return nil
 		}
-		amount := customRoundTo(order.BaseAmount*(rate/100), 8)
-		if amount <= 0 {
+		amountDec := baseAmountDec.Mul(rateDec).Div(decimal.NewFromInt(100)).Round(moneyx.ScaleCommission)
+		if !amountDec.GreaterThan(moneyx.Commission(0)) {
 			return nil
 		}
+		amount := amountDec.InexactFloat64()
 
 		settleAt := order.PaidAt
 		if settleAt.IsZero() {
@@ -493,9 +899,9 @@ RETURNING id`,
 			order.UserID,
 			order.OrderID,
 			strings.TrimSpace(order.OrderType),
-			order.BaseAmount,
-			rate,
-			amount,
+			baseAmountDec.StringFixed(moneyx.ScaleCommission),
+			rateDec.StringFixed(moneyx.ScaleRate),
+			amountDec.StringFixed(moneyx.ScaleCommission),
 			service.CustomReferralCommissionStatusPending,
 			settleAt,
 		)
@@ -504,6 +910,22 @@ RETURNING id`,
 		}
 		if !insertRows.Next() {
 			_ = insertRows.Close()
+			existingRows, err := exec.QueryContext(txCtx, `
+SELECT commission_amount::double precision
+FROM custom_referral_commissions
+WHERE order_id = $1`, order.OrderID)
+			if err != nil {
+				return err
+			}
+			if existingRows.Next() {
+				if err := existingRows.Scan(&applied); err != nil {
+					_ = existingRows.Close()
+					return err
+				}
+			}
+			if err := existingRows.Close(); err != nil {
+				return err
+			}
 			return nil
 		}
 		var commissionID int64
@@ -516,16 +938,28 @@ RETURNING id`,
 		}
 
 		if _, err := exec.ExecContext(txCtx, `
-INSERT INTO custom_commission_accounts (affiliate_id, created_at, updated_at)
-VALUES ($1, NOW(), NOW())
-ON CONFLICT (affiliate_id) DO NOTHING`, affiliateID); err != nil {
+INSERT INTO custom_commission_accounts (affiliate_id, user_id, created_at, updated_at)
+SELECT a.id, a.user_id, NOW(), NOW()
+FROM custom_affiliates a
+WHERE a.id = $1
+  AND NOT EXISTS (
+    SELECT 1
+    FROM custom_commission_accounts ca
+    WHERE ca.affiliate_id = a.id
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM custom_commission_accounts ca
+    WHERE ca.user_id = a.user_id
+  )
+ON CONFLICT DO NOTHING`, affiliateID); err != nil {
 			return err
 		}
 		if _, err := exec.ExecContext(txCtx, `
 UPDATE custom_commission_accounts
 SET pending_amount = pending_amount + $2,
     updated_at = NOW()
-WHERE affiliate_id = $1`, affiliateID, amount); err != nil {
+WHERE affiliate_id = $1`, affiliateID, amountDec.StringFixed(moneyx.ScaleCommission)); err != nil {
 			return err
 		}
 		if _, err := exec.ExecContext(txCtx, `
@@ -537,7 +971,7 @@ INSERT INTO custom_commission_ledger (
 			commissionID,
 			fmt.Sprintf("%d", order.OrderID),
 			fmt.Sprintf("order:%d", order.OrderID),
-			amount,
+			amountDec.StringFixed(moneyx.ScaleCommission),
 			fmt.Sprintf("order_type=%s inviter_user_id=%d", strings.TrimSpace(order.OrderType), inviterUserID),
 		); err != nil {
 			return err
@@ -589,26 +1023,33 @@ FOR UPDATE`, refund.OrderID)
 			return nil
 		}
 
-		target := commissionAmount
-		if refund.RefundAmount < baseAmount {
-			target = customRoundTo(commissionAmount*(refund.RefundAmount/baseAmount), 8)
-		}
-		reverseAmount := customRoundTo(target-refundedAmount, 8)
-		if reverseAmount <= 0 {
-			return nil
-		}
-		if remaining := customRoundTo(commissionAmount-refundedAmount, 8); reverseAmount > remaining {
-			reverseAmount = remaining
-		}
-		if reverseAmount <= 0 {
-			return nil
-		}
+		baseAmountDec := moneyx.Commission(baseAmount)
+		commissionAmountDec := moneyx.Commission(commissionAmount)
+		refundedAmountDec := moneyx.Commission(refundedAmount)
+		refundAmountDec := moneyx.Commission(refund.RefundAmount)
 
-		nextRefunded := customRoundTo(refundedAmount+reverseAmount, 8)
+		targetDec := commissionAmountDec
+		if refundAmountDec.LessThan(baseAmountDec) {
+			targetDec = moneyx.Proportion(commissionAmount, refund.RefundAmount, baseAmount, moneyx.ScaleCommission)
+		}
+		reverseAmountDec := targetDec.Sub(refundedAmountDec).Round(moneyx.ScaleCommission)
+		if !reverseAmountDec.GreaterThan(moneyx.Commission(0)) {
+			return nil
+		}
+		remainingDec := commissionAmountDec.Sub(refundedAmountDec).Round(moneyx.ScaleCommission)
+		if reverseAmountDec.GreaterThan(remainingDec) {
+			reverseAmountDec = remainingDec
+		}
+		if !reverseAmountDec.GreaterThan(moneyx.Commission(0)) {
+			return nil
+		}
+		reverseAmount := reverseAmountDec.InexactFloat64()
+
+		nextRefundedDec := refundedAmountDec.Add(reverseAmountDec).Round(moneyx.ScaleCommission)
 		nextStatus := status
 		reversedAt := any(nil)
 		reversedReason := ""
-		if nearlyEqual(nextRefunded, commissionAmount) || nextRefunded > commissionAmount {
+		if nextRefundedDec.Equal(commissionAmountDec) || nextRefundedDec.GreaterThan(commissionAmountDec) {
 			nextStatus = service.CustomReferralCommissionStatusReversed
 			reversedAt = refund.RefundedAt
 			if refund.RefundedAt.IsZero() {
@@ -626,7 +1067,7 @@ SET refunded_amount = $2,
     updated_at = NOW()
 WHERE id = $1`,
 			commissionID,
-			nextRefunded,
+			nextRefundedDec.InexactFloat64(),
 			nextStatus,
 			reversedAt,
 			reversedReason,
@@ -634,36 +1075,132 @@ WHERE id = $1`,
 			return err
 		}
 
-		accountField := "pending_amount"
-		deltaPending := reverseAmount
-		deltaAvailable := 0.0
-		if status == service.CustomReferralCommissionStatusAvailable {
-			accountField = "available_amount"
-			deltaPending = 0
-			deltaAvailable = reverseAmount
+		if _, err := exec.ExecContext(txCtx, `
+INSERT INTO custom_commission_accounts (affiliate_id, user_id, created_at, updated_at)
+SELECT a.id, a.user_id, NOW(), NOW()
+FROM custom_affiliates a
+WHERE a.id = $1
+  AND NOT EXISTS (
+    SELECT 1
+    FROM custom_commission_accounts ca
+    WHERE ca.affiliate_id = a.id
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM custom_commission_accounts ca
+    WHERE ca.user_id = a.user_id
+  )
+ON CONFLICT DO NOTHING`, affiliateID); err != nil {
+			return err
 		}
 
-		if _, err := exec.ExecContext(txCtx, fmt.Sprintf(`
-UPDATE custom_commission_accounts
-SET %s = %s - $2,
-    reversed_amount = reversed_amount + $2,
-    updated_at = NOW()
-WHERE affiliate_id = $1`, accountField, accountField), affiliateID, reverseAmount); err != nil {
+		accountRows, err := exec.QueryContext(txCtx, `
+SELECT pending_amount::double precision,
+       available_amount::double precision
+FROM custom_commission_accounts
+WHERE affiliate_id = $1
+FOR UPDATE`, affiliateID)
+		if err != nil {
 			return err
+		}
+		pendingBalance := 0.0
+		availableBalance := 0.0
+		if accountRows.Next() {
+			if err := accountRows.Scan(&pendingBalance, &availableBalance); err != nil {
+				_ = accountRows.Close()
+				return err
+			}
+		}
+		if err := accountRows.Close(); err != nil {
+			return err
+		}
+		pendingBalanceDec := moneyx.NonNegative(moneyx.Commission(pendingBalance))
+		availableBalanceDec := moneyx.NonNegative(moneyx.Commission(availableBalance))
+
+		pendingDecreaseDec := moneyx.Commission(0)
+		availableDecreaseDec := moneyx.Commission(0)
+		debtIncreaseDec := moneyx.Commission(0)
+		switch status {
+		case service.CustomReferralCommissionStatusPending:
+			pendingDecreaseDec = moneyx.Min(reverseAmountDec, pendingBalanceDec)
+			debtIncreaseDec = reverseAmountDec.Sub(pendingDecreaseDec).Round(moneyx.ScaleCommission)
+		case service.CustomReferralCommissionStatusAvailable:
+			allocatedRows, err := exec.QueryContext(txCtx, `
+SELECT allocated_amount::double precision,
+       status
+FROM custom_commission_withdrawal_items
+WHERE commission_id = $1
+  AND status IN ($2, $3)
+FOR UPDATE`,
+				commissionID,
+				service.CustomReferralWithdrawalItemStatusFrozen,
+				service.CustomReferralWithdrawalItemStatusWithdrawn,
+			)
+			if err != nil {
+				return err
+			}
+			protectedAmount := 0.0
+			for allocatedRows.Next() {
+				var allocated float64
+				var itemStatus string
+				if err := allocatedRows.Scan(&allocated, &itemStatus); err != nil {
+					_ = allocatedRows.Close()
+					return err
+				}
+				if itemStatus == service.CustomReferralWithdrawalItemStatusFrozen || itemStatus == service.CustomReferralWithdrawalItemStatusWithdrawn {
+					protectedAmount = customRoundTo(protectedAmount+allocated, 8)
+				}
+			}
+			if err := allocatedRows.Close(); err != nil {
+				return err
+			}
+			protectedAmountDec := moneyx.Commission(protectedAmount)
+			unallocatedAmountDec := moneyx.NonNegative(commissionAmountDec.Sub(refundedAmountDec).Sub(protectedAmountDec).Round(moneyx.ScaleCommission))
+			availableTargetDec := moneyx.Min(reverseAmountDec, unallocatedAmountDec)
+			availableDecreaseDec = moneyx.Min(availableTargetDec, availableBalanceDec)
+			debtIncreaseDec = reverseAmountDec.Sub(availableDecreaseDec).Round(moneyx.ScaleCommission)
+		default:
+			debtIncreaseDec = reverseAmountDec
+		}
+
+		res, err := exec.ExecContext(txCtx, `
+UPDATE custom_commission_accounts
+SET pending_amount = pending_amount - $2,
+    available_amount = available_amount - $3,
+    debt_amount = debt_amount + $4,
+    reversed_amount = reversed_amount + $5,
+    updated_at = NOW()
+WHERE affiliate_id = $1
+  AND pending_amount + 0.00000001 >= $2
+  AND available_amount + 0.00000001 >= $3
+  AND debt_amount + $4 >= -0.00000001`,
+			affiliateID,
+			pendingDecreaseDec.InexactFloat64(),
+			availableDecreaseDec.InexactFloat64(),
+			debtIncreaseDec.InexactFloat64(),
+			reverseAmount,
+		)
+		if err != nil {
+			return err
+		}
+		affected, _ := res.RowsAffected()
+		if affected == 0 {
+			return service.ErrCustomReferralWithdrawInsufficient
 		}
 
 		if _, err := exec.ExecContext(txCtx, `
 INSERT INTO custom_commission_ledger (
     affiliate_id, commission_id, type, ref_type, ref_id, external_ref_id,
-    delta_pending, delta_available, delta_reversed, remark, operator, created_at
-) VALUES ($1, $2, 'commission_reverse', 'refund', $3, $4, $5, $6, $7, $8, 'system', NOW())`,
+    delta_pending, delta_available, delta_reversed, delta_debt, remark, operator, created_at
+) VALUES ($1, $2, 'commission_reverse', 'refund', $3, $4, $5, $6, $7, $8, $9, 'system', NOW())`,
 			affiliateID,
 			commissionID,
 			fmt.Sprintf("%d", refund.OrderID),
 			fmt.Sprintf("refund:%d:%0.8f", refund.OrderID, reverseAmount),
-			-deltaPending,
-			-deltaAvailable,
+			pendingDecreaseDec.Neg().InexactFloat64(),
+			availableDecreaseDec.Neg().InexactFloat64(),
 			reverseAmount,
+			debtIncreaseDec.InexactFloat64(),
 			strings.TrimSpace(refund.Reason),
 		); err != nil {
 			return err
@@ -676,6 +1213,587 @@ INSERT INTO custom_commission_ledger (
 		return 0, err
 	}
 	return reversed, nil
+}
+
+func (r *customReferralRepository) ReverseCommissionManually(ctx context.Context, input service.CustomReferralManualReverseInput) (*service.CustomReferralCommissionReversal, error) {
+	var out *service.CustomReferralCommissionReversal
+	err := r.withTx(ctx, func(txCtx context.Context, exec sqlQueryExecutor) error {
+		existing, err := r.getCommissionReversalByExternalRefID(txCtx, exec, input.IdempotencyKey)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if existing != nil {
+			existing.AlreadyProcessed = true
+			out = existing
+			return nil
+		}
+
+		type lockedCommission struct {
+			id               int64
+			affiliateID      int64
+			affiliateUserID  int64
+			orderID          int64
+			baseAmount       float64
+			commissionAmount float64
+			refundedAmount   float64
+			status           string
+		}
+		rows, err := exec.QueryContext(txCtx, `
+SELECT c.id,
+       c.affiliate_id,
+       a.user_id,
+       c.order_id,
+       c.base_amount::double precision,
+       c.commission_amount::double precision,
+       c.refunded_amount::double precision,
+       c.status
+FROM custom_referral_commissions c
+JOIN custom_affiliates a ON a.id = c.affiliate_id
+WHERE (($1::bigint > 0 AND c.id = $1)
+   OR ($1::bigint <= 0 AND c.order_id = $2))
+FOR UPDATE OF c`, input.CommissionID, input.OrderID)
+		if err != nil {
+			return err
+		}
+		if !rows.Next() {
+			_ = rows.Close()
+			return service.ErrCustomReferralCommissionNotFound
+		}
+		var commission lockedCommission
+		if err := rows.Scan(
+			&commission.id,
+			&commission.affiliateID,
+			&commission.affiliateUserID,
+			&commission.orderID,
+			&commission.baseAmount,
+			&commission.commissionAmount,
+			&commission.refundedAmount,
+			&commission.status,
+		); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+
+		if _, err := exec.ExecContext(txCtx, `
+INSERT INTO custom_commission_accounts (affiliate_id, user_id, created_at, updated_at)
+SELECT a.id, a.user_id, NOW(), NOW()
+FROM custom_affiliates a
+WHERE a.id = $1
+  AND NOT EXISTS (
+    SELECT 1
+    FROM custom_commission_accounts ca
+    WHERE ca.affiliate_id = a.id
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM custom_commission_accounts ca
+    WHERE ca.user_id = a.user_id
+  )
+ON CONFLICT DO NOTHING`, commission.affiliateID); err != nil {
+			return err
+		}
+
+		accountRows, err := exec.QueryContext(txCtx, `
+SELECT pending_amount::double precision,
+       available_amount::double precision,
+       frozen_amount::double precision,
+       debt_amount::double precision
+FROM custom_commission_accounts
+WHERE affiliate_id = $1
+FOR UPDATE`, commission.affiliateID)
+		if err != nil {
+			return err
+		}
+		pendingBalance := 0.0
+		availableBalance := 0.0
+		frozenBalance := 0.0
+		debtBalance := 0.0
+		if accountRows.Next() {
+			if err := accountRows.Scan(&pendingBalance, &availableBalance, &frozenBalance, &debtBalance); err != nil {
+				_ = accountRows.Close()
+				return err
+			}
+		}
+		if err := accountRows.Close(); err != nil {
+			return err
+		}
+
+		baseAmountDec := moneyx.Commission(commission.baseAmount)
+		commissionAmountDec := moneyx.Commission(commission.commissionAmount)
+		refundedAmountDec := moneyx.Commission(commission.refundedAmount)
+		refundAmountDec := moneyx.Commission(input.RefundAmount)
+		targetDec := commissionAmountDec
+		if baseAmountDec.GreaterThan(decimal.Zero) && refundAmountDec.LessThan(baseAmountDec) {
+			targetDec = moneyx.Proportion(commission.commissionAmount, input.RefundAmount, commission.baseAmount, moneyx.ScaleCommission)
+		}
+		reverseAmountDec := targetDec.Sub(refundedAmountDec).Round(moneyx.ScaleCommission)
+		remainingCommissionDec := commissionAmountDec.Sub(refundedAmountDec).Round(moneyx.ScaleCommission)
+		if reverseAmountDec.GreaterThan(remainingCommissionDec) {
+			reverseAmountDec = remainingCommissionDec
+		}
+		if reverseAmountDec.IsNegative() {
+			reverseAmountDec = decimal.Zero
+		}
+
+		frozenAllocatedDec := decimal.Zero
+		withdrawnAllocatedDec := decimal.Zero
+		nextRefundedDec := refundedAmountDec
+		nextStatus := commission.status
+		if reverseAmountDec.GreaterThan(decimal.Zero) && commission.status == service.CustomReferralCommissionStatusAvailable {
+			frozenAllocatedDec, withdrawnAllocatedDec, err = r.getCommissionAllocatedAmounts(txCtx, exec, commission.id)
+			if err != nil {
+				return err
+			}
+		}
+		allocation := computeCustomCommissionManualReversalAllocation(customCommissionManualReversalAllocationInput{
+			Status:             commission.status,
+			ReverseAmount:      reverseAmountDec,
+			CommissionAmount:   commissionAmountDec,
+			RefundedAmount:     refundedAmountDec,
+			PendingBalance:     moneyx.Commission(pendingBalance),
+			AvailableBalance:   moneyx.Commission(availableBalance),
+			FrozenBalance:      moneyx.Commission(frozenBalance),
+			FrozenAllocated:    frozenAllocatedDec,
+			WithdrawnAllocated: withdrawnAllocatedDec,
+		})
+		pendingDecreaseDec := allocation.PendingDecrease
+		availableDecreaseDec := allocation.AvailableDecrease
+		frozenDecreaseDec := allocation.FrozenDecrease
+		debtIncreaseDec := allocation.DebtIncrease
+
+		insertRows, err := exec.QueryContext(txCtx, `
+INSERT INTO custom_commission_reversals (
+    affiliate_id, commission_id, order_id, admin_user_id, external_ref_id,
+    refund_amount, reverse_amount, delta_pending, delta_available,
+    delta_frozen, delta_reversed, delta_debt, reason, created_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
+ON CONFLICT (external_ref_id) DO NOTHING
+RETURNING id`,
+			commission.affiliateID,
+			commission.id,
+			commission.orderID,
+			adminIDOrNil(input.AdminUserID),
+			input.IdempotencyKey,
+			refundAmountDec.InexactFloat64(),
+			reverseAmountDec.InexactFloat64(),
+			pendingDecreaseDec.Neg().InexactFloat64(),
+			availableDecreaseDec.Neg().InexactFloat64(),
+			frozenDecreaseDec.Neg().InexactFloat64(),
+			reverseAmountDec.InexactFloat64(),
+			debtIncreaseDec.InexactFloat64(),
+			strings.TrimSpace(input.Reason),
+		)
+		if err != nil {
+			return err
+		}
+		var reversalID int64
+		if !insertRows.Next() {
+			_ = insertRows.Close()
+			existing, err := r.getCommissionReversalByExternalRefID(txCtx, exec, input.IdempotencyKey)
+			if err != nil {
+				return err
+			}
+			existing.AlreadyProcessed = true
+			out = existing
+			return nil
+		}
+		if err := insertRows.Scan(&reversalID); err != nil {
+			_ = insertRows.Close()
+			return err
+		}
+		if err := insertRows.Close(); err != nil {
+			return err
+		}
+
+		if reverseAmountDec.GreaterThan(decimal.Zero) {
+			if frozenDecreaseDec.GreaterThan(decimal.Zero) {
+				reducedDec, err := r.reduceFrozenWithdrawalAllocations(txCtx, exec, commission.id, frozenDecreaseDec)
+				if err != nil {
+					return err
+				}
+				if !reducedDec.Equal(frozenDecreaseDec) {
+					shortfallDec := frozenDecreaseDec.Sub(reducedDec).Round(moneyx.ScaleCommission)
+					frozenDecreaseDec = reducedDec
+					availableCapacityDec := moneyx.NonNegative(moneyx.Commission(availableBalance).Sub(availableDecreaseDec).Round(moneyx.ScaleCommission))
+					extraAvailableDec := moneyx.Min(shortfallDec, availableCapacityDec)
+					availableDecreaseDec = availableDecreaseDec.Add(extraAvailableDec).Round(moneyx.ScaleCommission)
+					debtIncreaseDec = debtIncreaseDec.Add(shortfallDec.Sub(extraAvailableDec)).Round(moneyx.ScaleCommission)
+					if _, err := exec.ExecContext(txCtx, `
+UPDATE custom_commission_reversals
+SET delta_available = $2,
+    delta_frozen = $3,
+    delta_debt = $4
+WHERE id = $1`,
+						reversalID,
+						availableDecreaseDec.Neg().InexactFloat64(),
+						frozenDecreaseDec.Neg().InexactFloat64(),
+						debtIncreaseDec.InexactFloat64(),
+					); err != nil {
+						return err
+					}
+				}
+			}
+
+			nextRefundedDec = refundedAmountDec.Add(reverseAmountDec).Round(moneyx.ScaleCommission)
+			reversedAt := any(nil)
+			reversedReason := ""
+			if nextRefundedDec.Equal(commissionAmountDec) || nextRefundedDec.GreaterThan(commissionAmountDec) {
+				nextStatus = service.CustomReferralCommissionStatusReversed
+				reversedAt = input.ReversedAt
+				reversedReason = strings.TrimSpace(input.Reason)
+			}
+			if _, err := exec.ExecContext(txCtx, `
+UPDATE custom_referral_commissions
+SET refunded_amount = $2,
+    status = $3,
+    reversed_at = CASE WHEN $4::timestamptz IS NULL THEN reversed_at ELSE $4::timestamptz END,
+    reversed_reason = CASE WHEN $5 = '' THEN reversed_reason ELSE $5 END,
+    updated_at = NOW()
+WHERE id = $1`,
+				commission.id,
+				nextRefundedDec.InexactFloat64(),
+				nextStatus,
+				reversedAt,
+				reversedReason,
+			); err != nil {
+				return err
+			}
+
+			res, err := exec.ExecContext(txCtx, `
+UPDATE custom_commission_accounts
+SET pending_amount = pending_amount - $2,
+    available_amount = available_amount - $3,
+    frozen_amount = frozen_amount - $4,
+    debt_amount = debt_amount + $5,
+    reversed_amount = reversed_amount + $6,
+    updated_at = NOW()
+WHERE affiliate_id = $1
+  AND pending_amount + 0.00000001 >= $2
+  AND available_amount + 0.00000001 >= $3
+  AND frozen_amount + 0.00000001 >= $4
+  AND debt_amount + $5 >= -0.00000001`,
+				commission.affiliateID,
+				pendingDecreaseDec.InexactFloat64(),
+				availableDecreaseDec.InexactFloat64(),
+				frozenDecreaseDec.InexactFloat64(),
+				debtIncreaseDec.InexactFloat64(),
+				reverseAmountDec.InexactFloat64(),
+			)
+			if err != nil {
+				return err
+			}
+			affected, _ := res.RowsAffected()
+			if affected == 0 {
+				return service.ErrCustomReferralWithdrawInsufficient
+			}
+
+			if _, err := exec.ExecContext(txCtx, `
+INSERT INTO custom_commission_ledger (
+    affiliate_id, commission_id, type, ref_type, ref_id, external_ref_id,
+    delta_pending, delta_available, delta_frozen, delta_reversed, delta_debt,
+    remark, operator, created_at
+) VALUES ($1, $2, 'commission_reverse', 'manual_refund', $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())`,
+				commission.affiliateID,
+				commission.id,
+				fmt.Sprintf("%d", commission.orderID),
+				input.IdempotencyKey,
+				pendingDecreaseDec.Neg().InexactFloat64(),
+				availableDecreaseDec.Neg().InexactFloat64(),
+				frozenDecreaseDec.Neg().InexactFloat64(),
+				reverseAmountDec.InexactFloat64(),
+				debtIncreaseDec.InexactFloat64(),
+				fmt.Sprintf("reason=%s refund_amount=%s reverse_amount=%s", strings.TrimSpace(input.Reason), refundAmountDec.StringFixed(8), reverseAmountDec.StringFixed(8)),
+				fmt.Sprintf("admin:%d", input.AdminUserID),
+			); err != nil {
+				return err
+			}
+		}
+
+		oldValue := map[string]any{
+			"affiliate_id":     commission.affiliateID,
+			"commission_id":    commission.id,
+			"order_id":         commission.orderID,
+			"status":           commission.status,
+			"refunded_amount":  refundedAmountDec.InexactFloat64(),
+			"pending_amount":   moneyx.Commission(pendingBalance).InexactFloat64(),
+			"available_amount": moneyx.Commission(availableBalance).InexactFloat64(),
+			"frozen_amount":    moneyx.Commission(frozenBalance).InexactFloat64(),
+			"debt_amount":      moneyx.Commission(debtBalance).InexactFloat64(),
+		}
+		newValue := map[string]any{
+			"affiliate_id":     commission.affiliateID,
+			"commission_id":    commission.id,
+			"order_id":         commission.orderID,
+			"status":           nextStatus,
+			"refunded_amount":  nextRefundedDec.InexactFloat64(),
+			"refund_amount":    refundAmountDec.InexactFloat64(),
+			"reverse_amount":   reverseAmountDec.InexactFloat64(),
+			"delta_pending":    pendingDecreaseDec.Neg().InexactFloat64(),
+			"delta_available":  availableDecreaseDec.Neg().InexactFloat64(),
+			"delta_frozen":     frozenDecreaseDec.Neg().InexactFloat64(),
+			"delta_debt":       debtIncreaseDec.InexactFloat64(),
+			"pending_amount":   moneyx.Commission(pendingBalance).Sub(pendingDecreaseDec).Round(moneyx.ScaleCommission).InexactFloat64(),
+			"available_amount": moneyx.Commission(availableBalance).Sub(availableDecreaseDec).Round(moneyx.ScaleCommission).InexactFloat64(),
+			"frozen_amount":    moneyx.Commission(frozenBalance).Sub(frozenDecreaseDec).Round(moneyx.ScaleCommission).InexactFloat64(),
+			"debt_amount":      moneyx.Commission(debtBalance).Add(debtIncreaseDec).Round(moneyx.ScaleCommission).InexactFloat64(),
+			"idempotency_key":  input.IdempotencyKey,
+		}
+		if err := r.recordAdminAuditWithExecutor(txCtx, exec, commission.affiliateUserID, commission.affiliateID, service.CustomReferralAdminAuditContext{
+			Action:      "commission_manual_reverse",
+			AdminUserID: input.AdminUserID,
+			IP:          input.IP,
+			UserAgent:   input.UserAgent,
+			Reason:      input.Reason,
+			OldValue:    oldValue,
+			NewValue:    newValue,
+		}); err != nil {
+			return err
+		}
+
+		out, err = r.getCommissionReversalByID(txCtx, exec, reversalID)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+type customCommissionManualReversalAllocationInput struct {
+	Status             string
+	ReverseAmount      decimal.Decimal
+	CommissionAmount   decimal.Decimal
+	RefundedAmount     decimal.Decimal
+	PendingBalance     decimal.Decimal
+	AvailableBalance   decimal.Decimal
+	FrozenBalance      decimal.Decimal
+	FrozenAllocated    decimal.Decimal
+	WithdrawnAllocated decimal.Decimal
+}
+
+type customCommissionManualReversalAllocation struct {
+	PendingDecrease   decimal.Decimal
+	AvailableDecrease decimal.Decimal
+	FrozenDecrease    decimal.Decimal
+	DebtIncrease      decimal.Decimal
+}
+
+func computeCustomCommissionManualReversalAllocation(input customCommissionManualReversalAllocationInput) customCommissionManualReversalAllocation {
+	out := customCommissionManualReversalAllocation{
+		PendingDecrease:   decimal.Zero,
+		AvailableDecrease: decimal.Zero,
+		FrozenDecrease:    decimal.Zero,
+		DebtIncrease:      decimal.Zero,
+	}
+	reverseAmountDec := input.ReverseAmount.Round(moneyx.ScaleCommission)
+	if !reverseAmountDec.GreaterThan(decimal.Zero) {
+		return out
+	}
+
+	switch input.Status {
+	case service.CustomReferralCommissionStatusPending:
+		out.PendingDecrease = moneyx.Min(reverseAmountDec, moneyx.NonNegative(input.PendingBalance)).Round(moneyx.ScaleCommission)
+		out.DebtIncrease = moneyx.NonNegative(reverseAmountDec.Sub(out.PendingDecrease).Round(moneyx.ScaleCommission))
+	case service.CustomReferralCommissionStatusAvailable:
+		remainingDec := reverseAmountDec
+		frozenTargetDec := moneyx.Min(remainingDec, moneyx.NonNegative(input.FrozenAllocated))
+		out.FrozenDecrease = moneyx.Min(frozenTargetDec, moneyx.NonNegative(input.FrozenBalance)).Round(moneyx.ScaleCommission)
+		remainingDec = remainingDec.Sub(out.FrozenDecrease).Round(moneyx.ScaleCommission)
+
+		unallocatedAvailableDec := moneyx.NonNegative(input.CommissionAmount.Sub(input.RefundedAmount).Sub(input.FrozenAllocated).Sub(input.WithdrawnAllocated).Round(moneyx.ScaleCommission))
+		availableTargetDec := moneyx.Min(remainingDec, unallocatedAvailableDec)
+		out.AvailableDecrease = moneyx.Min(availableTargetDec, moneyx.NonNegative(input.AvailableBalance)).Round(moneyx.ScaleCommission)
+		remainingDec = remainingDec.Sub(out.AvailableDecrease).Round(moneyx.ScaleCommission)
+		out.DebtIncrease = moneyx.NonNegative(remainingDec)
+	default:
+		out.DebtIncrease = reverseAmountDec
+	}
+	return out
+}
+
+func (r *customReferralRepository) getCommissionAllocatedAmounts(ctx context.Context, exec sqlQueryExecutor, commissionID int64) (decimal.Decimal, decimal.Decimal, error) {
+	rows, err := exec.QueryContext(ctx, `
+SELECT allocated_amount::double precision,
+       status
+FROM custom_commission_withdrawal_items
+WHERE commission_id = $1
+  AND status IN ($2, $3)
+FOR UPDATE`,
+		commissionID,
+		service.CustomReferralWithdrawalItemStatusFrozen,
+		service.CustomReferralWithdrawalItemStatusWithdrawn,
+	)
+	if err != nil {
+		return decimal.Zero, decimal.Zero, err
+	}
+	defer func() { _ = rows.Close() }()
+	frozenDec := decimal.Zero
+	withdrawnDec := decimal.Zero
+	for rows.Next() {
+		var amount float64
+		var status string
+		if err := rows.Scan(&amount, &status); err != nil {
+			return decimal.Zero, decimal.Zero, err
+		}
+		switch status {
+		case service.CustomReferralWithdrawalItemStatusFrozen:
+			frozenDec = frozenDec.Add(moneyx.Commission(amount)).Round(moneyx.ScaleCommission)
+		case service.CustomReferralWithdrawalItemStatusWithdrawn:
+			withdrawnDec = withdrawnDec.Add(moneyx.Commission(amount)).Round(moneyx.ScaleCommission)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return decimal.Zero, decimal.Zero, err
+	}
+	return frozenDec, withdrawnDec, nil
+}
+
+func (r *customReferralRepository) reduceFrozenWithdrawalAllocations(ctx context.Context, exec sqlQueryExecutor, commissionID int64, amountDec decimal.Decimal) (decimal.Decimal, error) {
+	if !amountDec.GreaterThan(decimal.Zero) {
+		return decimal.Zero, nil
+	}
+	rows, err := exec.QueryContext(ctx, `
+SELECT id,
+       withdrawal_id,
+       allocated_amount::double precision
+FROM custom_commission_withdrawal_items
+WHERE commission_id = $1
+  AND status = $2
+ORDER BY id ASC
+FOR UPDATE`, commissionID, service.CustomReferralWithdrawalItemStatusFrozen)
+	if err != nil {
+		return decimal.Zero, err
+	}
+	type frozenItem struct {
+		id           int64
+		withdrawalID int64
+		amount       float64
+	}
+	items := make([]frozenItem, 0)
+	for rows.Next() {
+		var item frozenItem
+		if err := rows.Scan(&item.id, &item.withdrawalID, &item.amount); err != nil {
+			_ = rows.Close()
+			return decimal.Zero, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Close(); err != nil {
+		return decimal.Zero, err
+	}
+
+	remainingDec := amountDec
+	reducedDec := decimal.Zero
+	for _, item := range items {
+		if !remainingDec.GreaterThan(decimal.Zero) {
+			break
+		}
+		itemAmountDec := moneyx.Commission(item.amount)
+		useDec := moneyx.Min(itemAmountDec, remainingDec)
+		nextItemAmountDec := itemAmountDec.Sub(useDec).Round(moneyx.ScaleCommission)
+		if nextItemAmountDec.GreaterThan(decimal.Zero) {
+			if _, err := exec.ExecContext(ctx, `
+UPDATE custom_commission_withdrawal_items
+SET allocated_amount = $2
+WHERE id = $1`, item.id, nextItemAmountDec.InexactFloat64()); err != nil {
+				return decimal.Zero, err
+			}
+		} else {
+			if _, err := exec.ExecContext(ctx, `
+UPDATE custom_commission_withdrawal_items
+SET allocated_amount = 0,
+    status = $2
+WHERE id = $1`, item.id, service.CustomReferralWithdrawalItemStatusReleased); err != nil {
+				return decimal.Zero, err
+			}
+		}
+		res, err := exec.ExecContext(ctx, `
+UPDATE custom_commission_withdrawals
+SET amount = amount - $2,
+    net_amount = GREATEST(net_amount - $2, 0),
+    admin_note = TRIM(BOTH FROM CONCAT(COALESCE(admin_note, ''), ' manual refund reversal adjusted amount')),
+    updated_at = NOW()
+WHERE id = $1
+  AND amount + 0.00000001 >= $2`, item.withdrawalID, useDec.InexactFloat64())
+		if err != nil {
+			return decimal.Zero, err
+		}
+		affected, _ := res.RowsAffected()
+		if affected == 0 {
+			return decimal.Zero, service.ErrCustomReferralWithdrawInsufficient
+		}
+		reducedDec = reducedDec.Add(useDec).Round(moneyx.ScaleCommission)
+		remainingDec = remainingDec.Sub(useDec).Round(moneyx.ScaleCommission)
+	}
+	return reducedDec, nil
+}
+
+func (r *customReferralRepository) getCommissionReversalByExternalRefID(ctx context.Context, exec sqlQueryExecutor, externalRefID string) (*service.CustomReferralCommissionReversal, error) {
+	rows, err := exec.QueryContext(ctx, `
+SELECT id,
+       affiliate_id,
+       commission_id,
+       order_id,
+       refund_amount::double precision,
+       reverse_amount::double precision,
+       delta_pending::double precision,
+       delta_available::double precision,
+       delta_frozen::double precision,
+       delta_reversed::double precision,
+       delta_debt::double precision,
+       COALESCE(reason, ''),
+       external_ref_id,
+       COALESCE(admin_user_id, 0),
+       created_at
+FROM custom_commission_reversals
+WHERE external_ref_id = $1
+FOR UPDATE`, externalRefID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		return nil, sql.ErrNoRows
+	}
+	return scanCustomCommissionReversal(rows)
+}
+
+func (r *customReferralRepository) getCommissionReversalByID(ctx context.Context, exec sqlQueryExecutor, id int64) (*service.CustomReferralCommissionReversal, error) {
+	rows, err := exec.QueryContext(ctx, `
+SELECT id,
+       affiliate_id,
+       commission_id,
+       order_id,
+       refund_amount::double precision,
+       reverse_amount::double precision,
+       delta_pending::double precision,
+       delta_available::double precision,
+       delta_frozen::double precision,
+       delta_reversed::double precision,
+       delta_debt::double precision,
+       COALESCE(reason, ''),
+       external_ref_id,
+       COALESCE(admin_user_id, 0),
+       created_at
+FROM custom_commission_reversals
+WHERE id = $1`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		return nil, sql.ErrNoRows
+	}
+	return scanCustomCommissionReversal(rows)
 }
 
 func (r *customReferralRepository) GetDashboardByUserID(ctx context.Context, userID int64) (*service.CustomReferralDashboard, error) {
@@ -714,7 +1832,8 @@ LEFT JOIN (
 LEFT JOIN (
     SELECT affiliate_id, COUNT(DISTINCT invitee_user_id) AS cnt
     FROM custom_referral_commissions
-    WHERE commission_amount > 0
+    WHERE status <> 'reversed'
+      AND commission_amount > refunded_amount
     GROUP BY affiliate_id
 ) paid ON paid.affiliate_id = a.id
 WHERE a.user_id = $1`, userID)
@@ -793,7 +1912,7 @@ SELECT a.id,
        COALESCE(u.username, ''),
        a.invite_code,
        a.status,
-       a.source_type,
+       COALESCE(a.source_type, 'admin_created'),
        a.rate_override::double precision,
        COALESCE(clicks.cnt, 0),
        COALESCE(bindings.cnt, 0),
@@ -824,7 +1943,8 @@ LEFT JOIN (
 LEFT JOIN (
     SELECT affiliate_id, COUNT(DISTINCT invitee_user_id) AS cnt
     FROM custom_referral_commissions
-    WHERE commission_amount > 0
+    WHERE status <> 'reversed'
+      AND commission_amount > refunded_amount
     GROUP BY affiliate_id
 ) paid ON paid.affiliate_id = a.id
 WHERE ($1 = '' OR a.status = $1)
@@ -924,7 +2044,7 @@ func (r *customReferralRepository) GetAdminOverview(ctx context.Context) (*servi
 	}
 	rows, err := exec.QueryContext(ctx, `
 SELECT
-    COALESCE((SELECT COUNT(*) FROM custom_affiliates), 0),
+    COALESCE((SELECT COUNT(*) FROM custom_affiliates WHERE status IN ('approved', 'disabled')), 0),
     COALESCE((SELECT COUNT(*) FROM custom_affiliates WHERE status = 'approved'), 0),
     COALESCE((SELECT COUNT(*) FROM custom_affiliates WHERE status = 'disabled'), 0),
     COALESCE((SELECT SUM(pending_amount)::double precision FROM custom_commission_accounts), 0),
@@ -933,7 +2053,7 @@ SELECT
     COALESCE((SELECT SUM(withdrawn_amount)::double precision FROM custom_commission_accounts), 0),
     COALESCE((SELECT COUNT(*) FROM custom_referral_clicks), 0),
     COALESCE((SELECT COUNT(*) FROM custom_referral_bindings), 0),
-    COALESCE((SELECT COUNT(DISTINCT invitee_user_id) FROM custom_referral_commissions WHERE commission_amount > 0), 0)`)
+    COALESCE((SELECT COUNT(DISTINCT invitee_user_id) FROM custom_referral_commissions WHERE status <> 'reversed' AND commission_amount > refunded_amount), 0)`)
 	if err != nil {
 		return nil, err
 	}
@@ -962,8 +2082,82 @@ SELECT
 	return &out, nil
 }
 
-func (r *customReferralRepository) ListCommissionsByUserID(ctx context.Context, userID int64, params service.CustomReferralCommissionListParams) ([]service.CustomReferralCommission, int64, error) {
-	return r.listCommissions(ctx, params, "WHERE a.user_id = $1 AND ($2 = '' OR c.status = $2)", userID)
+func (r *customReferralRepository) ListCommissionsByUserID(ctx context.Context, userID int64, params service.CustomReferralCommissionListParams) ([]service.CustomReferralUserCommission, int64, error) {
+	exec := txAwareSQLExecutor(ctx, r.sql, r.client)
+	if exec == nil {
+		return nil, 0, fmt.Errorf("custom referral sql executor is not configured")
+	}
+	offset := (params.Page - 1) * params.PageSize
+	status := strings.TrimSpace(params.Status)
+	countRows, err := exec.QueryContext(ctx, `
+SELECT COUNT(*)
+FROM custom_referral_commissions c
+JOIN custom_affiliates a ON a.id = c.affiliate_id
+WHERE a.user_id = $1
+  AND ($2 = '' OR c.status = $2)`, userID, status)
+	if err != nil {
+		return nil, 0, err
+	}
+	var total int64
+	if countRows.Next() {
+		if err := countRows.Scan(&total); err != nil {
+			_ = countRows.Close()
+			return nil, 0, err
+		}
+	}
+	if err := countRows.Close(); err != nil {
+		return nil, 0, err
+	}
+	rows, err := exec.QueryContext(ctx, `
+SELECT c.id,
+       c.order_type,
+       c.commission_amount::double precision,
+       c.refunded_amount::double precision,
+       c.status,
+       c.settle_at,
+       c.available_at,
+       c.reversed_at,
+       c.created_at
+FROM custom_referral_commissions c
+JOIN custom_affiliates a ON a.id = c.affiliate_id
+WHERE a.user_id = $1
+  AND ($2 = '' OR c.status = $2)
+ORDER BY c.created_at DESC, c.id DESC
+LIMIT $3 OFFSET $4`, userID, status, params.PageSize, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	items := make([]service.CustomReferralUserCommission, 0)
+	for rows.Next() {
+		var item service.CustomReferralUserCommission
+		var availableAt sql.NullTime
+		var reversedAt sql.NullTime
+		if err := rows.Scan(
+			&item.ID,
+			&item.OrderType,
+			&item.CommissionAmount,
+			&item.RefundedAmount,
+			&item.Status,
+			&item.SettleAt,
+			&availableAt,
+			&reversedAt,
+			&item.CreatedAt,
+		); err != nil {
+			return nil, 0, err
+		}
+		if availableAt.Valid {
+			item.AvailableAt = &availableAt.Time
+		}
+		if reversedAt.Valid {
+			item.ReversedAt = &reversedAt.Time
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
 }
 
 func (r *customReferralRepository) ListAffiliateCommissions(ctx context.Context, affiliateUserID int64, params service.CustomReferralCommissionListParams) ([]service.CustomReferralCommission, int64, error) {
@@ -972,6 +2166,77 @@ func (r *customReferralRepository) ListAffiliateCommissions(ctx context.Context,
 
 func (r *customReferralRepository) ListCommissions(ctx context.Context, params service.CustomReferralCommissionListParams) ([]service.CustomReferralCommission, int64, error) {
 	return r.listCommissions(ctx, params, "WHERE ($1 = '' OR c.status = $1)")
+}
+
+func (r *customReferralRepository) ListCommissionJobs(ctx context.Context, params service.CustomReferralCommissionListParams) ([]service.CustomReferralCommissionJob, int64, error) {
+	exec := txAwareSQLExecutor(ctx, r.sql, r.client)
+	if exec == nil {
+		return nil, 0, fmt.Errorf("custom referral sql executor is not configured")
+	}
+	status := strings.TrimSpace(params.Status)
+	offset := (params.Page - 1) * params.PageSize
+	countRows, err := exec.QueryContext(ctx, `
+SELECT COUNT(*)
+FROM custom_referral_commission_jobs
+WHERE ($1 = '' OR status = $1)`, status)
+	if err != nil {
+		return nil, 0, err
+	}
+	var total int64
+	if countRows.Next() {
+		if err := countRows.Scan(&total); err != nil {
+			_ = countRows.Close()
+			return nil, 0, err
+		}
+	}
+	if err := countRows.Close(); err != nil {
+		return nil, 0, err
+	}
+
+	rows, err := exec.QueryContext(ctx, `
+SELECT id,
+       order_id,
+       COALESCE(affiliate_id, 0),
+       status,
+       attempt_count,
+       COALESCE(last_error, ''),
+       locked_at,
+       succeeded_at,
+       failed_at,
+       created_at,
+       updated_at
+FROM custom_referral_commission_jobs
+WHERE ($1 = '' OR status = $1)
+ORDER BY updated_at DESC, id DESC
+LIMIT $2 OFFSET $3`, status, params.PageSize, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	items := make([]service.CustomReferralCommissionJob, 0)
+	for rows.Next() {
+		var item service.CustomReferralCommissionJob
+		if err := rows.Scan(
+			&item.ID,
+			&item.OrderID,
+			&item.AffiliateID,
+			&item.Status,
+			&item.AttemptCount,
+			&item.LastError,
+			&item.LockedAt,
+			&item.SucceededAt,
+			&item.FailedAt,
+			&item.CreatedAt,
+			&item.UpdatedAt,
+		); err != nil {
+			return nil, 0, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
 }
 
 func (r *customReferralRepository) listCommissions(ctx context.Context, params service.CustomReferralCommissionListParams, where string, args ...any) ([]service.CustomReferralCommission, int64, error) {
@@ -1168,35 +2433,66 @@ func (r *customReferralRepository) settleDueCommissions(ctx context.Context, exe
 SELECT c.id,
        c.affiliate_id,
        c.commission_amount::double precision,
-       a.settlement_enabled
+       c.refunded_amount::double precision
 FROM custom_referral_commissions c
 JOIN custom_affiliates a ON a.id = c.affiliate_id
+JOIN users u ON u.id = a.user_id
 WHERE c.status = $1
   AND c.settle_at <= $2
+  AND a.status = $3
+  AND u.status = $4
+  AND a.settlement_enabled = TRUE
 ORDER BY c.settle_at ASC, c.id ASC
-FOR UPDATE`, service.CustomReferralCommissionStatusPending, now)
+FOR UPDATE`, service.CustomReferralCommissionStatusPending, now, service.CustomAffiliateStatusApproved, service.StatusActive)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = rows.Close() }()
 
+	type dueCommission struct {
+		commissionID     int64
+		affiliateID      int64
+		commissionAmount float64
+		refundedAmount   float64
+	}
+	dueItems := make([]dueCommission, 0)
 	for rows.Next() {
-		var commissionID int64
-		var affiliateID int64
-		var amount float64
-		var settlementEnabled bool
-		if err := rows.Scan(&commissionID, &affiliateID, &amount, &settlementEnabled); err != nil {
+		var item dueCommission
+		if err := rows.Scan(&item.commissionID, &item.affiliateID, &item.commissionAmount, &item.refundedAmount); err != nil {
+			_ = rows.Close()
 			return err
 		}
+		dueItems = append(dueItems, item)
 		if result != nil {
 			result.ScannedCount++
 		}
-		if !settlementEnabled || amount <= 0 {
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+
+	for _, item := range dueItems {
+		amountDec := moneyx.Commission(item.commissionAmount).Sub(moneyx.Commission(item.refundedAmount)).Round(moneyx.ScaleCommission)
+		if !amountDec.GreaterThan(moneyx.Commission(0)) {
+			if _, err := exec.ExecContext(ctx, `
+UPDATE custom_referral_commissions
+SET status = $2,
+    reversed_at = COALESCE(reversed_at, $3),
+    updated_at = NOW()
+WHERE id = $1
+  AND status = $4`,
+				item.commissionID,
+				service.CustomReferralCommissionStatusReversed,
+				now,
+				service.CustomReferralCommissionStatusPending,
+			); err != nil {
+				return err
+			}
 			if result != nil {
 				result.SkippedCount++
 			}
 			continue
 		}
+		amount := amountDec.InexactFloat64()
 		if _, err := exec.ExecContext(ctx, `
 UPDATE custom_referral_commissions
 SET status = $2,
@@ -1204,7 +2500,7 @@ SET status = $2,
     updated_at = NOW()
 WHERE id = $1
   AND status = $4`,
-			commissionID,
+			item.commissionID,
 			service.CustomReferralCommissionStatusAvailable,
 			now,
 			service.CustomReferralCommissionStatusPending,
@@ -1212,24 +2508,74 @@ WHERE id = $1
 			return err
 		}
 		if _, err := exec.ExecContext(ctx, `
+INSERT INTO custom_commission_accounts (affiliate_id, user_id, created_at, updated_at)
+SELECT a.id, a.user_id, NOW(), NOW()
+FROM custom_affiliates a
+WHERE a.id = $1
+  AND NOT EXISTS (
+    SELECT 1
+    FROM custom_commission_accounts ca
+    WHERE ca.affiliate_id = a.id
+  )
+  AND NOT EXISTS (
+    SELECT 1
+    FROM custom_commission_accounts ca
+    WHERE ca.user_id = a.user_id
+  )
+ON CONFLICT DO NOTHING`, item.affiliateID); err != nil {
+			return err
+		}
+
+		debtRows, err := exec.QueryContext(ctx, `
+SELECT debt_amount::double precision
+FROM custom_commission_accounts
+WHERE affiliate_id = $1
+FOR UPDATE`, item.affiliateID)
+		if err != nil {
+			return err
+		}
+		debtAmount := 0.0
+		if debtRows.Next() {
+			if err := debtRows.Scan(&debtAmount); err != nil {
+				_ = debtRows.Close()
+				return err
+			}
+		}
+		if err := debtRows.Close(); err != nil {
+			return err
+		}
+		debtAmountDec := moneyx.NonNegative(moneyx.Commission(debtAmount))
+		debtRepaidDec := moneyx.Min(amountDec, debtAmountDec)
+		availableIncreaseDec := amountDec.Sub(debtRepaidDec).Round(moneyx.ScaleCommission)
+
+		res, err := exec.ExecContext(ctx, `
 UPDATE custom_commission_accounts
 SET pending_amount = pending_amount - $2,
-    available_amount = available_amount + $2,
+    available_amount = available_amount + $3,
+    debt_amount = debt_amount - $4,
     updated_at = NOW()
-WHERE affiliate_id = $1`, affiliateID, amount); err != nil {
+WHERE affiliate_id = $1
+  AND pending_amount + 0.00000001 >= $2
+  AND debt_amount + 0.00000001 >= $4`, item.affiliateID, amount, availableIncreaseDec.InexactFloat64(), debtRepaidDec.InexactFloat64())
+		if err != nil {
 			return err
+		}
+		affected, _ := res.RowsAffected()
+		if affected == 0 {
+			return service.ErrCustomReferralWithdrawInsufficient
 		}
 		if _, err := exec.ExecContext(ctx, `
 INSERT INTO custom_commission_ledger (
     affiliate_id, commission_id, type, ref_type, ref_id, external_ref_id,
-    delta_pending, delta_available, remark, operator, created_at
-) VALUES ($1, $2, 'commission_settle', 'commission', $3, $4, $5, $6, '', 'system', NOW())`,
-			affiliateID,
-			commissionID,
-			fmt.Sprintf("%d", commissionID),
-			fmt.Sprintf("settle:%d", commissionID),
+    delta_pending, delta_available, delta_debt, remark, operator, created_at
+) VALUES ($1, $2, 'commission_settle', 'commission', $3, $4, $5, $6, $7, '', 'system', NOW())`,
+			item.affiliateID,
+			item.commissionID,
+			fmt.Sprintf("%d", item.commissionID),
+			fmt.Sprintf("settle:%d", item.commissionID),
 			-amount,
-			amount,
+			availableIncreaseDec.InexactFloat64(),
+			debtRepaidDec.Neg().InexactFloat64(),
 		); err != nil {
 			return err
 		}
@@ -1237,10 +2583,13 @@ INSERT INTO custom_commission_ledger (
 			result.SettledCount++
 		}
 	}
-	return rows.Err()
+	return nil
 }
 
 func (r *customReferralRepository) CreateWithdrawal(ctx context.Context, input service.CustomReferralWithdrawalCreateInput, feeAmount float64) (*service.CustomReferralWithdrawal, error) {
+	if strings.TrimSpace(input.IdempotencyKey) == "" {
+		return nil, service.ErrCustomReferralInvalidIdempotency
+	}
 	var out *service.CustomReferralWithdrawal
 	err := r.withTx(ctx, func(txCtx context.Context, exec sqlQueryExecutor) error {
 		affiliate, err := r.getAffiliateByUserIDWithExecutor(txCtx, exec, input.UserID)
@@ -1252,6 +2601,9 @@ func (r *customReferralRepository) CreateWithdrawal(ctx context.Context, input s
 		}
 		if affiliate.Status != service.CustomAffiliateStatusApproved || !affiliate.WithdrawalEnabled {
 			return service.ErrCustomReferralWithdrawDisabled
+		}
+		if err := ensureAffiliateUserActive(txCtx, exec, affiliate.ID); err != nil {
+			return err
 		}
 
 		accountRows, err := exec.QueryContext(txCtx, `
@@ -1272,7 +2624,34 @@ FOR UPDATE`, affiliate.ID)
 		if err := accountRows.Close(); err != nil {
 			return err
 		}
-		if customRoundTo(availableAmount, 8) < customRoundTo(input.Amount, 8) {
+		if key := strings.TrimSpace(input.IdempotencyKey); key != "" {
+			existingRows, err := exec.QueryContext(txCtx, `
+SELECT id
+FROM custom_commission_withdrawals
+WHERE affiliate_id = $1
+  AND idempotency_key = $2
+LIMIT 1
+FOR UPDATE`, affiliate.ID, key)
+			if err != nil {
+				return err
+			}
+			if existingRows.Next() {
+				var existingID int64
+				if err := existingRows.Scan(&existingID); err != nil {
+					_ = existingRows.Close()
+					return err
+				}
+				_ = existingRows.Close()
+				out, err = r.getWithdrawalByID(txCtx, exec, existingID)
+				return err
+			}
+			if err := existingRows.Close(); err != nil {
+				return err
+			}
+		}
+		requestAmountDec := moneyx.Commission(input.Amount)
+		availableAmountDec := moneyx.Commission(availableAmount)
+		if availableAmountDec.LessThan(requestAmountDec) {
 			return service.ErrCustomReferralWithdrawInsufficient
 		}
 
@@ -1292,28 +2671,31 @@ FOR UPDATE`, affiliate.ID, service.CustomReferralCommissionStatusAvailable)
 		if err != nil {
 			return err
 		}
-		defer func() { _ = allocRows.Close() }()
 
 		type allocation struct {
 			commissionID int64
 			amount       float64
 		}
-		remaining := input.Amount
+		remainingDec := requestAmountDec
 		allocations := make([]allocation, 0)
-		for allocRows.Next() && remaining > 0 {
+		for allocRows.Next() && remainingDec.GreaterThan(moneyx.Commission(0)) {
 			var commissionID int64
 			var available float64
 			if err := allocRows.Scan(&commissionID, &available); err != nil {
 				return err
 			}
-			if available <= 0 {
+			availableDec := moneyx.Commission(available)
+			if !availableDec.GreaterThan(moneyx.Commission(0)) {
 				continue
 			}
-			useAmount := math.Min(available, remaining)
-			allocations = append(allocations, allocation{commissionID: commissionID, amount: customRoundTo(useAmount, 8)})
-			remaining = customRoundTo(remaining-useAmount, 8)
+			useAmountDec := moneyx.Min(availableDec, remainingDec)
+			allocations = append(allocations, allocation{commissionID: commissionID, amount: useAmountDec.InexactFloat64()})
+			remainingDec = remainingDec.Sub(useAmountDec).Round(moneyx.ScaleCommission)
 		}
 		if err := allocRows.Err(); err != nil {
+			return err
+		}
+		if err := allocRows.Close(); err != nil {
 			return err
 		}
 		// Manual commission adjustments are currently reflected directly in
@@ -1323,21 +2705,22 @@ FOR UPDATE`, affiliate.ID, service.CustomReferralCommissionStatusAvailable)
 		// to flow through this withdrawal without allocating extra
 		// custom_commission_withdrawal_items rows.
 
-		netAmount := customRoundTo(input.Amount-feeAmount, 8)
-		if netAmount <= 0 {
+		netAmountDec := requestAmountDec.Sub(moneyx.Commission(feeAmount)).Round(moneyx.ScaleCommission)
+		if !netAmountDec.GreaterThan(moneyx.Commission(0)) {
 			return service.ErrCustomReferralWithdrawTooSmall
 		}
+		netAmount := netAmountDec.InexactFloat64()
 
 		now := time.Now()
 		withdrawRows, err := exec.QueryContext(txCtx, `
 INSERT INTO custom_commission_withdrawals (
     affiliate_id, amount, fee_amount, net_amount, account_type, account_name, account_no, account_network,
-    qr_image_url, contact_info, applicant_note, status, submitted_at, created_at, updated_at
+    qr_image_url, contact_info, applicant_note, idempotency_key, status, submitted_at, created_at, updated_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
 RETURNING id`,
 			affiliate.ID,
-			input.Amount,
+			requestAmountDec.InexactFloat64(),
 			feeAmount,
 			netAmount,
 			strings.TrimSpace(input.AccountType),
@@ -1347,6 +2730,7 @@ RETURNING id`,
 			strings.TrimSpace(input.QRImageURL),
 			strings.TrimSpace(input.ContactInfo),
 			strings.TrimSpace(input.ApplicantNote),
+			strings.TrimSpace(input.IdempotencyKey),
 			service.CustomReferralWithdrawalStatusPending,
 			now,
 		)
@@ -1384,7 +2768,7 @@ UPDATE custom_commission_accounts
 SET available_amount = available_amount - $2,
     frozen_amount = frozen_amount + $2,
     updated_at = NOW()
-WHERE affiliate_id = $1`, affiliate.ID, input.Amount); err != nil {
+WHERE affiliate_id = $1`, affiliate.ID, requestAmountDec.InexactFloat64()); err != nil {
 			return err
 		}
 		if _, err := exec.ExecContext(txCtx, `
@@ -1396,8 +2780,8 @@ INSERT INTO custom_commission_ledger (
 			withdrawalID,
 			fmt.Sprintf("%d", withdrawalID),
 			fmt.Sprintf("withdrawal:%d", withdrawalID),
-			-input.Amount,
-			input.Amount,
+			requestAmountDec.Neg().InexactFloat64(),
+			requestAmountDec.InexactFloat64(),
 			strings.TrimSpace(input.ApplicantNote),
 		); err != nil {
 			return err
@@ -1531,15 +2915,11 @@ func (r *customReferralRepository) CancelWithdrawal(ctx context.Context, withdra
 func (r *customReferralRepository) ApproveWithdrawal(ctx context.Context, input service.CustomReferralWithdrawalReviewInput, deadlineAt time.Time) (*service.CustomReferralWithdrawal, error) {
 	var out *service.CustomReferralWithdrawal
 	err := r.withTx(ctx, func(txCtx context.Context, exec sqlQueryExecutor) error {
-		item, err := r.getWithdrawalByID(txCtx, exec, input.WithdrawalID)
-		if err != nil {
+		if err := ensureWithdrawalAffiliateUserActive(txCtx, exec, input.WithdrawalID); err != nil {
 			return err
 		}
-		if item.Status != service.CustomReferralWithdrawalStatusPending {
-			return service.ErrCustomReferralWithdrawalNotFound
-		}
 		now := time.Now()
-		if _, err := exec.ExecContext(txCtx, `
+		rows, err := exec.QueryContext(txCtx, `
 UPDATE custom_commission_withdrawals
 SET status = $2,
     approved_at = $3,
@@ -1547,14 +2927,30 @@ SET status = $2,
     reviewed_by = $5,
     admin_note = $6,
     updated_at = NOW()
-WHERE id = $1`,
+WHERE id = $1
+  AND status = $7
+RETURNING id`,
 			input.WithdrawalID,
 			service.CustomReferralWithdrawalStatusApproved,
 			now,
 			deadlineAt,
 			adminIDOrNil(input.AdminUserID),
 			strings.TrimSpace(input.AdminNote),
-		); err != nil {
+			service.CustomReferralWithdrawalStatusPending,
+		)
+		if err != nil {
+			return err
+		}
+		if !rows.Next() {
+			_ = rows.Close()
+			return service.ErrCustomReferralWithdrawalNotFound
+		}
+		var updatedID int64
+		if err := rows.Scan(&updatedID); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if err := rows.Close(); err != nil {
 			return err
 		}
 		out, err = r.getWithdrawalByID(txCtx, exec, input.WithdrawalID)
@@ -1567,21 +2963,17 @@ WHERE id = $1`,
 }
 
 func (r *customReferralRepository) RejectWithdrawal(ctx context.Context, input service.CustomReferralWithdrawalReviewInput) (*service.CustomReferralWithdrawal, error) {
-	return r.releaseWithdrawal(ctx, input.WithdrawalID, input.AdminUserID, "admin", service.CustomReferralWithdrawalStatusRejected, input.RejectReason, false)
+	return r.releaseWithdrawalWithNote(ctx, input.WithdrawalID, input.AdminUserID, "admin", service.CustomReferralWithdrawalStatusRejected, input.RejectReason, input.AdminNote, false)
 }
 
 func (r *customReferralRepository) MarkWithdrawalPaid(ctx context.Context, input service.CustomReferralWithdrawalPayInput) (*service.CustomReferralWithdrawal, error) {
 	var out *service.CustomReferralWithdrawal
 	err := r.withTx(ctx, func(txCtx context.Context, exec sqlQueryExecutor) error {
-		item, err := r.getWithdrawalByID(txCtx, exec, input.WithdrawalID)
-		if err != nil {
+		if err := ensureWithdrawalAffiliateUserActive(txCtx, exec, input.WithdrawalID); err != nil {
 			return err
 		}
-		if item.Status != service.CustomReferralWithdrawalStatusApproved {
-			return service.ErrCustomReferralWithdrawalNotFound
-		}
 		now := time.Now()
-		if _, err := exec.ExecContext(txCtx, `
+		rows, err := exec.QueryContext(txCtx, `
 UPDATE custom_commission_withdrawals
 SET status = $2,
     paid_at = $3,
@@ -1590,7 +2982,9 @@ SET status = $2,
     payment_proof_url = $6,
     payment_txn_no = $7,
     updated_at = NOW()
-WHERE id = $1`,
+WHERE id = $1
+  AND status = $8
+RETURNING affiliate_id, amount::double precision`,
 			input.WithdrawalID,
 			service.CustomReferralWithdrawalStatusPaid,
 			now,
@@ -1598,16 +2992,37 @@ WHERE id = $1`,
 			strings.TrimSpace(input.AdminNote),
 			strings.TrimSpace(input.PaymentProofURL),
 			strings.TrimSpace(input.PaymentTxnNo),
-		); err != nil {
+			service.CustomReferralWithdrawalStatusApproved,
+		)
+		if err != nil {
 			return err
 		}
-		if _, err := exec.ExecContext(txCtx, `
+		if !rows.Next() {
+			_ = rows.Close()
+			return service.ErrCustomReferralWithdrawalNotFound
+		}
+		var affiliateID int64
+		var amount float64
+		if err := rows.Scan(&affiliateID, &amount); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		res, err := exec.ExecContext(txCtx, `
 UPDATE custom_commission_accounts
 SET frozen_amount = frozen_amount - $2,
     withdrawn_amount = withdrawn_amount + $2,
     updated_at = NOW()
-WHERE affiliate_id = $1`, item.AffiliateID, item.Amount); err != nil {
+WHERE affiliate_id = $1
+  AND frozen_amount + 0.00000001 >= $2`, affiliateID, amount)
+		if err != nil {
 			return err
+		}
+		affected, _ := res.RowsAffected()
+		if affected == 0 {
+			return service.ErrCustomReferralWithdrawInsufficient
 		}
 		if _, err := exec.ExecContext(txCtx, `
 UPDATE custom_commission_withdrawal_items
@@ -1625,12 +3040,12 @@ INSERT INTO custom_commission_ledger (
     affiliate_id, withdrawal_id, type, ref_type, ref_id, external_ref_id,
     delta_frozen, delta_withdrawn, remark, operator, created_at
 ) VALUES ($1, $2, 'withdrawal_paid', 'withdrawal', $3, $4, $5, $6, $7, 'admin', NOW())`,
-			item.AffiliateID,
-			item.ID,
-			fmt.Sprintf("%d", item.ID),
-			fmt.Sprintf("withdrawal:%d", item.ID),
-			-item.Amount,
-			item.Amount,
+			affiliateID,
+			input.WithdrawalID,
+			fmt.Sprintf("%d", input.WithdrawalID),
+			fmt.Sprintf("withdrawal:%d", input.WithdrawalID),
+			-amount,
+			amount,
 			strings.TrimSpace(input.AdminNote),
 		); err != nil {
 			return err
@@ -1645,69 +3060,134 @@ INSERT INTO custom_commission_ledger (
 }
 
 func (r *customReferralRepository) releaseWithdrawal(ctx context.Context, withdrawalID, actorUserID int64, operator, targetStatus, reason string, actorMustOwn bool) (*service.CustomReferralWithdrawal, error) {
+	return r.releaseWithdrawalWithNote(ctx, withdrawalID, actorUserID, operator, targetStatus, reason, "", actorMustOwn)
+}
+
+func (r *customReferralRepository) releaseWithdrawalWithNote(ctx context.Context, withdrawalID, actorUserID int64, operator, targetStatus, reason, adminNote string, actorMustOwn bool) (*service.CustomReferralWithdrawal, error) {
 	var out *service.CustomReferralWithdrawal
 	err := r.withTx(ctx, func(txCtx context.Context, exec sqlQueryExecutor) error {
-		item, err := r.getWithdrawalByID(txCtx, exec, withdrawalID)
-		if err != nil {
-			return err
-		}
-		if actorMustOwn && item.AffiliateUserID != actorUserID {
-			return service.ErrCustomReferralWithdrawalNotFound
-		}
-		if targetStatus == service.CustomReferralWithdrawalStatusCanceled {
-			if item.Status != service.CustomReferralWithdrawalStatusPending {
-				return service.ErrCustomReferralWithdrawalNotFound
-			}
-		} else if item.Status != service.CustomReferralWithdrawalStatusPending && item.Status != service.CustomReferralWithdrawalStatusApproved {
-			return service.ErrCustomReferralWithdrawalNotFound
-		}
 		now := time.Now()
+		type lockedWithdrawal struct {
+			id              int64
+			affiliateID     int64
+			affiliateUserID int64
+			amount          float64
+		}
+		var item lockedWithdrawal
 		switch targetStatus {
 		case service.CustomReferralWithdrawalStatusCanceled:
-			if _, err := exec.ExecContext(txCtx, `
-UPDATE custom_commission_withdrawals
+			rows, err := exec.QueryContext(txCtx, `
+UPDATE custom_commission_withdrawals w
 SET status = $2,
     canceled_at = $3,
     canceled_by = $4,
     updated_at = NOW()
-WHERE id = $1`,
+FROM custom_affiliates a
+WHERE w.id = $1
+  AND w.affiliate_id = a.id
+  AND w.status = $5
+  AND ($6 = FALSE OR a.user_id = $7)
+RETURNING w.id, w.affiliate_id, a.user_id, w.amount::double precision`,
 				withdrawalID,
 				targetStatus,
 				now,
 				adminIDOrNil(actorUserID),
-			); err != nil {
+				service.CustomReferralWithdrawalStatusPending,
+				actorMustOwn,
+				actorUserID,
+			)
+			if err != nil {
+				return err
+			}
+			if !rows.Next() {
+				_ = rows.Close()
+				return service.ErrCustomReferralWithdrawalNotFound
+			}
+			if err := rows.Scan(&item.id, &item.affiliateID, &item.affiliateUserID, &item.amount); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			if err := rows.Close(); err != nil {
 				return err
 			}
 		case service.CustomReferralWithdrawalStatusRejected:
-			if _, err := exec.ExecContext(txCtx, `
-UPDATE custom_commission_withdrawals
+			rows, err := exec.QueryContext(txCtx, `
+UPDATE custom_commission_withdrawals w
 SET status = $2,
     rejected_at = $3,
     reviewed_by = $4,
     reject_reason = $5,
     admin_note = $6,
     updated_at = NOW()
-WHERE id = $1`,
+FROM custom_affiliates a
+WHERE w.id = $1
+  AND w.affiliate_id = a.id
+  AND w.status IN ($7, $8)
+RETURNING w.id, w.affiliate_id, a.user_id, w.amount::double precision`,
 				withdrawalID,
 				targetStatus,
 				now,
 				adminIDOrNil(actorUserID),
 				strings.TrimSpace(reason),
-				strings.TrimSpace(reason),
-			); err != nil {
+				strings.TrimSpace(adminNote),
+				service.CustomReferralWithdrawalStatusPending,
+				service.CustomReferralWithdrawalStatusApproved,
+			)
+			if err != nil {
+				return err
+			}
+			if !rows.Next() {
+				_ = rows.Close()
+				return service.ErrCustomReferralWithdrawalNotFound
+			}
+			if err := rows.Scan(&item.id, &item.affiliateID, &item.affiliateUserID, &item.amount); err != nil {
+				_ = rows.Close()
+				return err
+			}
+			if err := rows.Close(); err != nil {
 				return err
 			}
 		default:
 			return service.ErrCustomReferralWithdrawalNotFound
 		}
 
-		if _, err := exec.ExecContext(txCtx, `
+		debtRows, err := exec.QueryContext(txCtx, `
+SELECT debt_amount::double precision
+FROM custom_commission_accounts
+WHERE affiliate_id = $1
+FOR UPDATE`, item.affiliateID)
+		if err != nil {
+			return err
+		}
+		debtAmount := 0.0
+		if debtRows.Next() {
+			if err := debtRows.Scan(&debtAmount); err != nil {
+				_ = debtRows.Close()
+				return err
+			}
+		}
+		if err := debtRows.Close(); err != nil {
+			return err
+		}
+		itemAmountDec := moneyx.Commission(item.amount)
+		debtAmountDec := moneyx.NonNegative(moneyx.Commission(debtAmount))
+		debtRepaidDec := moneyx.Min(itemAmountDec, debtAmountDec)
+		availableReturnedDec := itemAmountDec.Sub(debtRepaidDec).Round(moneyx.ScaleCommission)
+
+		res, err := exec.ExecContext(txCtx, `
 UPDATE custom_commission_accounts
 SET frozen_amount = frozen_amount - $2,
-    available_amount = available_amount + $2,
+    available_amount = available_amount + $3,
+    debt_amount = debt_amount - $4,
     updated_at = NOW()
-WHERE affiliate_id = $1`, item.AffiliateID, item.Amount); err != nil {
+WHERE affiliate_id = $1
+  AND frozen_amount + 0.00000001 >= $2`, item.affiliateID, itemAmountDec.InexactFloat64(), availableReturnedDec.InexactFloat64(), debtRepaidDec.InexactFloat64())
+		if err != nil {
 			return err
+		}
+		affected, _ := res.RowsAffected()
+		if affected == 0 {
+			return service.ErrCustomReferralWithdrawInsufficient
 		}
 		if _, err := exec.ExecContext(txCtx, `
 UPDATE custom_commission_withdrawal_items
@@ -1727,15 +3207,16 @@ WHERE withdrawal_id = $1
 		if _, err := exec.ExecContext(txCtx, `
 INSERT INTO custom_commission_ledger (
     affiliate_id, withdrawal_id, type, ref_type, ref_id, external_ref_id,
-    delta_available, delta_frozen, remark, operator, created_at
-) VALUES ($1, $2, $3, 'withdrawal', $4, $5, $6, $7, $8, $9, NOW())`,
-			item.AffiliateID,
-			item.ID,
+    delta_available, delta_frozen, delta_debt, remark, operator, created_at
+) VALUES ($1, $2, $3, 'withdrawal', $4, $5, $6, $7, $8, $9, $10, NOW())`,
+			item.affiliateID,
+			item.id,
 			ledgerType,
-			fmt.Sprintf("%d", item.ID),
-			fmt.Sprintf("withdrawal:%d", item.ID),
-			item.Amount,
-			-item.Amount,
+			fmt.Sprintf("%d", item.id),
+			fmt.Sprintf("withdrawal:%d", item.id),
+			availableReturnedDec.InexactFloat64(),
+			itemAmountDec.Neg().InexactFloat64(),
+			debtRepaidDec.Neg().InexactFloat64(),
 			strings.TrimSpace(reason),
 			operator,
 		); err != nil {
@@ -1860,6 +3341,76 @@ func generateSettlementBatchNo() (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("settle-%s-%x", time.Now().UTC().Format("20060102150405"), buf), nil
+}
+
+func (r *customReferralRepository) RecordAdminAudit(ctx context.Context, targetUserID int64, audit service.CustomReferralAdminAuditContext) error {
+	return r.withTx(ctx, func(txCtx context.Context, exec sqlQueryExecutor) error {
+		var affiliateID int64
+		if targetUserID > 0 {
+			item, err := r.getAffiliateByUserIDWithExecutor(txCtx, exec, targetUserID)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return err
+			}
+			if item != nil {
+				affiliateID = item.ID
+			}
+		}
+		return r.recordAdminAuditWithExecutor(txCtx, exec, targetUserID, affiliateID, audit)
+	})
+}
+
+func (r *customReferralRepository) recordAdminAuditWithExecutor(ctx context.Context, exec sqlQueryExecutor, targetUserID, affiliateID int64, audit service.CustomReferralAdminAuditContext) error {
+	if exec == nil {
+		return fmt.Errorf("custom referral audit executor is not configured")
+	}
+	action := strings.TrimSpace(audit.Action)
+	if action == "" {
+		action = "custom_referral_admin_update"
+	}
+	oldValue, err := json.Marshal(nonNilAuditMap(audit.OldValue))
+	if err != nil {
+		return err
+	}
+	newValue, err := json.Marshal(nonNilAuditMap(audit.NewValue))
+	if err != nil {
+		return err
+	}
+	_, err = exec.ExecContext(ctx, `
+INSERT INTO custom_referral_admin_audit_logs (
+    action, target_user_id, affiliate_id, admin_user_id, reason, ip, user_agent, old_value, new_value, created_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, NOW())`,
+		action,
+		adminIDOrNil(targetUserID),
+		adminIDOrNil(affiliateID),
+		adminIDOrNil(audit.AdminUserID),
+		strings.TrimSpace(audit.Reason),
+		strings.TrimSpace(audit.IP),
+		strings.TrimSpace(audit.UserAgent),
+		string(oldValue),
+		string(newValue),
+	)
+	return err
+}
+
+func customAffiliateStatusAuditValue(item *service.CustomAffiliate) map[string]any {
+	if item == nil {
+		return map[string]any{}
+	}
+	return map[string]any{
+		"status":              item.Status,
+		"acquisition_enabled": item.AcquisitionEnabled,
+		"settlement_enabled":  item.SettlementEnabled,
+		"withdrawal_enabled":  item.WithdrawalEnabled,
+		"risk_reason":         item.RiskReason,
+		"rate_override":       item.RateOverride,
+	}
+}
+
+func nonNilAuditMap(v map[string]any) map[string]any {
+	if v == nil {
+		return map[string]any{}
+	}
+	return v
 }
 
 func scanCustomAffiliate(scanner interface{ Scan(dest ...any) error }) (*service.CustomAffiliate, error) {
@@ -2031,6 +3582,30 @@ func scanCustomReferralCommission(scanner interface{ Scan(dest ...any) error }) 
 	return &out, nil
 }
 
+func scanCustomCommissionReversal(scanner interface{ Scan(dest ...any) error }) (*service.CustomReferralCommissionReversal, error) {
+	var out service.CustomReferralCommissionReversal
+	if err := scanner.Scan(
+		&out.ID,
+		&out.AffiliateID,
+		&out.CommissionID,
+		&out.OrderID,
+		&out.RefundAmount,
+		&out.ReverseAmount,
+		&out.DeltaPending,
+		&out.DeltaAvailable,
+		&out.DeltaFrozen,
+		&out.DeltaReversed,
+		&out.DeltaDebt,
+		&out.Reason,
+		&out.ExternalRefID,
+		&out.AdminUserID,
+		&out.CreatedAt,
+	); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func adminIDOrNil(v int64) any {
 	if v <= 0 {
 		return nil
@@ -2039,8 +3614,7 @@ func adminIDOrNil(v int64) any {
 }
 
 func customRoundTo(v float64, scale int) float64 {
-	factor := math.Pow10(scale)
-	return math.Round(v*factor) / factor
+	return moneyx.Round(v, int32(scale))
 }
 
 func isPQUniqueViolation(err error) bool {
@@ -2049,5 +3623,5 @@ func isPQUniqueViolation(err error) bool {
 }
 
 func nearlyEqual(a, b float64) bool {
-	return math.Abs(a-b) <= 0.00000001
+	return moneyx.Equal(a, b, moneyx.ScaleCommission)
 }

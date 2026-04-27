@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -28,6 +30,7 @@ type createReferralWithdrawalRequest struct {
 	QRImageURL     string  `json:"qr_image_url"`
 	ContactInfo    string  `json:"contact_info"`
 	ApplicantNote  string  `json:"applicant_note"`
+	IdempotencyKey string  `json:"idempotency_key"`
 }
 
 type applyReferralRequest struct {
@@ -49,26 +52,38 @@ func (h *ReferralHandler) CaptureReferral(c *gin.Context) {
 	landing, err := h.referralService.HandleLanding(
 		c.Request.Context(),
 		c.Param("code"),
-		c.GetHeader("Referer"),
-		c.Request.URL.Path,
+		service.CustomReferralClickInput{
+			Referer:       c.GetHeader("Referer"),
+			LandingPath:   c.Request.URL.Path,
+			IPHash:        service.HashCustomReferralRiskValue(c.ClientIP()),
+			UserAgentHash: service.HashCustomReferralRiskValue(c.GetHeader("User-Agent")),
+			ClickedAt:     time.Now(),
+		},
 	)
 	if err == nil && landing != nil {
-		raw, signErr := h.referralService.BuildSignedCookieValue(landing.Code, time.Now())
-		if signErr == nil {
-			http.SetCookie(c.Writer, &http.Cookie{
-				Name:     service.CustomReferralCookieName,
-				Value:    encodeCookieValue(raw),
-				Path:     "/",
-				MaxAge:   landing.CookieTTLDays * 24 * 60 * 60,
-				HttpOnly: true,
-				Secure:   isRequestHTTPS(c),
-				SameSite: http.SameSiteLaxMode,
-			})
-			c.Redirect(http.StatusFound, landing.RedirectPath)
-			return
-		}
+		c.Redirect(http.StatusFound, referralRegisterRedirect(landing.RedirectPath, landing.Code))
+		return
 	}
-	c.Redirect(http.StatusFound, "/register")
+	c.Redirect(http.StatusFound, referralRegisterErrorRedirect())
+}
+
+func (h *ReferralHandler) ServeAsset(c *gin.Context) {
+	if h == nil || h.assetService == nil || h.referralService == nil {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+	publicPath := "/referral-assets/" + strings.TrimLeft(c.Param("path"), "/")
+	if !h.referralService.VerifyReferralAssetURL(publicPath, c.Query("expires"), c.Query("sig"), time.Now()) {
+		c.AbortWithStatus(http.StatusForbidden)
+		return
+	}
+	filePath, err := h.assetService.ResolvePublicPath(publicPath)
+	if err != nil {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+	c.Header("Cache-Control", "private, max-age=60")
+	c.File(filePath)
 }
 
 func (h *ReferralHandler) GetSummary(c *gin.Context) {
@@ -148,6 +163,14 @@ func (h *ReferralHandler) CreateWithdrawal(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	idempotencyKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	if idempotencyKey == "" {
+		idempotencyKey = strings.TrimSpace(req.IdempotencyKey)
+	}
+	if idempotencyKey == "" {
+		response.ErrorFrom(c, service.ErrCustomReferralInvalidIdempotency)
+		return
+	}
 	item, err := h.referralService.CreateWithdrawal(c.Request.Context(), service.CustomReferralWithdrawalCreateInput{
 		UserID:         subject.UserID,
 		Amount:         req.Amount,
@@ -158,6 +181,7 @@ func (h *ReferralHandler) CreateWithdrawal(c *gin.Context) {
 		QRImageURL:     strings.TrimSpace(req.QRImageURL),
 		ContactInfo:    strings.TrimSpace(req.ContactInfo),
 		ApplicantNote:  strings.TrimSpace(req.ApplicantNote),
+		IdempotencyKey: idempotencyKey,
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -205,13 +229,18 @@ func (h *ReferralHandler) CancelWithdrawal(c *gin.Context) {
 }
 
 func (h *ReferralHandler) UploadAsset(c *gin.Context) {
-	if h == nil || h.assetService == nil {
+	if h == nil || h.assetService == nil || h.referralService == nil {
 		response.InternalError(c, "asset service unavailable")
 		return
 	}
+	maxBytes := h.assetService.MaxImageBytes()
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
 		response.BadRequest(c, "请选择要上传的二维码图片")
+		return
+	}
+	if fileHeader.Size > maxBytes {
+		response.BadRequest(c, fmt.Sprintf("上传图片不能超过 %.1f MB", float64(maxBytes)/(1024*1024)))
 		return
 	}
 	file, err := fileHeader.Open()
@@ -221,9 +250,13 @@ func (h *ReferralHandler) UploadAsset(c *gin.Context) {
 	}
 	defer func() { _ = file.Close() }()
 
-	data, err := io.ReadAll(file)
+	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
 	if err != nil {
 		response.InternalError(c, "读取上传文件失败")
+		return
+	}
+	if int64(len(data)) > maxBytes {
+		response.BadRequest(c, fmt.Sprintf("上传图片不能超过 %.1f MB", float64(maxBytes)/(1024*1024)))
 		return
 	}
 	contentType := http.DetectContentType(data)
@@ -232,5 +265,33 @@ func (h *ReferralHandler) UploadAsset(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
+	url, err = h.referralService.SignReferralAssetURL(url, time.Now())
+	if err != nil {
+		response.InternalError(c, "asset signing unavailable")
+		return
+	}
 	response.Success(c, gin.H{"url": url})
+}
+
+func referralRegisterRedirect(basePath, code string) string {
+	basePath = strings.TrimSpace(basePath)
+	if basePath == "" {
+		basePath = "/register"
+	}
+	u, err := url.Parse(basePath)
+	if err != nil {
+		return "/register"
+	}
+	q := u.Query()
+	q.Set("aff_code", strings.ToUpper(strings.TrimSpace(code)))
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+func referralRegisterErrorRedirect() string {
+	u := url.URL{Path: "/register"}
+	q := u.Query()
+	q.Set("referral_error", "invalid_code")
+	u.RawQuery = q.Encode()
+	return u.String()
 }

@@ -227,7 +227,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
-      requiresReferral: true,
+      requiresActiveReferral: true,
       title: '提现申请'
     }
   },
@@ -717,7 +717,6 @@ function isBackendModePublicRouteAllowed(path: string, hasPendingAuthSession: bo
 }
 
 router.beforeEach(async (to, _from, next) => {
-  captureAffiliateCodeFromQuery(to.query as Record<string, unknown>)
   // 开始导航加载状态
   navigationLoading.startNavigation()
 
@@ -727,6 +726,9 @@ router.beforeEach(async (to, _from, next) => {
   if (!authInitialized) {
     authStore.checkAuth()
     authInitialized = true
+  }
+  if (!authStore.isAuthenticated) {
+    captureAffiliateCodeFromQuery(to.query as Record<string, unknown>)
   }
 
   // Set page title
@@ -752,6 +754,7 @@ router.beforeEach(async (to, _from, next) => {
   const requiresAuth = to.meta.requiresAuth !== false // Default to true
   const requiresAdmin = to.meta.requiresAdmin === true
   const requiresReferral = to.meta.requiresReferral === true
+  const requiresActiveReferral = to.meta.requiresActiveReferral === true
 
   // If route doesn't require auth, allow access
   if (!requiresAuth) {
@@ -796,10 +799,15 @@ router.beforeEach(async (to, _from, next) => {
     return
   }
 
-  if (requiresReferral) {
+  if (to.path.startsWith('/affiliate') && appStore.cachedPublicSettings?.affiliate_enabled === false) {
+    next('/dashboard')
+    return
+  }
+
+  if (requiresReferral || requiresActiveReferral) {
     const referralStore = useReferralStore()
     await referralStore.ensureLoaded()
-    if (!referralStore.canAccess) {
+    if ((requiresReferral && !referralStore.canAccess) || (requiresActiveReferral && !referralStore.canWithdraw)) {
       next('/dashboard')
       return
     }

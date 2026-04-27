@@ -35,7 +35,7 @@
                 <td class="px-4 py-3"><span class="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">待审核</span></td>
                 <td class="px-4 py-3">
                   <div class="flex flex-wrap items-center gap-2">
-                    <button class="btn btn-secondary btn-sm" @click="approve(item)">批准</button>
+                    <button class="btn btn-secondary btn-sm" @click="openApproveDialog(item)">批准</button>
                     <button class="btn btn-secondary btn-sm" @click="reject(item)">驳回</button>
                   </div>
                 </td>
@@ -52,6 +52,23 @@
           @update:pageSize="handlePageSizeChange"
         />
       </div>
+
+      <BaseDialog :show="approveDialog.visible" title="批准推广员" @close="closeApproveDialog">
+        <div class="space-y-4 text-sm">
+          <div class="text-gray-600 dark:text-dark-300">
+            {{ approveDialog.target?.email || approveDialog.target?.username || '-' }}
+          </div>
+          <div>
+            <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">专属返佣比例</label>
+            <input v-model.number="approveDialog.rateOverride" type="number" min="0" max="100" step="0.01" class="input" />
+            <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">留空表示使用全局返佣比例。</p>
+          </div>
+        </div>
+        <template #footer>
+          <button class="btn btn-secondary" @click="closeApproveDialog">取消</button>
+          <button class="btn btn-primary" :disabled="approving" @click="approveSelected">{{ approving ? '提交中...' : '确认批准' }}</button>
+        </template>
+      </BaseDialog>
     </div>
   </AppLayout>
 </template>
@@ -61,6 +78,7 @@ import { onMounted, reactive, ref } from 'vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 import Pagination from '@/components/common/Pagination.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
 import adminReferralAPI from '@/api/admin/referral'
 import type { CustomAffiliate } from '@/types'
 import { useAppStore } from '@/stores/app'
@@ -68,8 +86,18 @@ import { extractApiErrorMessage } from '@/utils/apiError'
 
 const appStore = useAppStore()
 const loading = ref(false)
+const approving = ref(false)
 const items = ref<CustomAffiliate[]>([])
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
+const approveDialog = reactive<{
+  visible: boolean
+  target: CustomAffiliate | null
+  rateOverride: number | string | null
+}>({
+  visible: false,
+  target: null,
+  rateOverride: null,
+})
 
 async function loadItems(): Promise<void> {
   loading.value = true
@@ -88,13 +116,44 @@ async function loadItems(): Promise<void> {
   }
 }
 
-async function approve(item: CustomAffiliate): Promise<void> {
+function normalizeApproveRate(): number | null {
+  const value = approveDialog.rateOverride
+  if (value === null || value === undefined || value === '') {
+    return null
+  }
+  const numeric = Number(value)
+  if (Number.isNaN(numeric)) {
+    return null
+  }
+  if (numeric < 0) return 0
+  if (numeric > 100) return 100
+  return numeric
+}
+
+function openApproveDialog(item: CustomAffiliate): void {
+  approveDialog.visible = true
+  approveDialog.target = item
+  approveDialog.rateOverride = item.rate_override ?? null
+}
+
+function closeApproveDialog(): void {
+  approveDialog.visible = false
+  approveDialog.target = null
+  approveDialog.rateOverride = null
+}
+
+async function approveSelected(): Promise<void> {
+  if (approving.value || !approveDialog.target) return
+  approving.value = true
   try {
-    await adminReferralAPI.approveAffiliate(item.user_id)
+    await adminReferralAPI.approveAffiliate(approveDialog.target.user_id, { rate_override: normalizeApproveRate() })
     appStore.showSuccess('推广员已批准')
+    closeApproveDialog()
     loadItems()
   } catch (error) {
     appStore.showError(extractApiErrorMessage(error, '批准推广员失败'))
+  } finally {
+    approving.value = false
   }
 }
 

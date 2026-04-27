@@ -1,7 +1,7 @@
 <template>
   <AppLayout>
     <div class="space-y-6">
-      <template v-if="isApproved">
+      <template v-if="canViewDashboard">
         <ReferralNavTabs />
 
         <div v-if="loading" class="flex items-center justify-center py-12">
@@ -76,6 +76,9 @@
                   <div class="text-sm text-gray-500 dark:text-dark-400">已提现金额</div>
                   <div class="mt-2 text-xl font-semibold text-gray-900 dark:text-white">{{ formatMoney(summary.withdrawn_amount) }}</div>
                 </div>
+                <div class="rounded-lg border border-dashed border-emerald-200 bg-emerald-50/60 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-900/15 dark:text-emerald-300 sm:col-span-3">
+                  可提现佣金满 {{ formatMoney(summary.min_withdraw_amount) }} 可以提交提现申请。
+                </div>
               </div>
             </div>
           </div>
@@ -93,7 +96,7 @@
               </div>
             </RouterLink>
 
-            <RouterLink to="/affiliate/withdraw" class="card p-5 transition-colors hover:border-primary-400">
+            <RouterLink v-if="canWithdraw" to="/affiliate/withdraw" class="card p-5 transition-colors hover:border-primary-400">
               <div class="flex items-center gap-3">
                 <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300">
                   <Icon name="dollar" size="md" />
@@ -149,7 +152,7 @@
               当前推广员资格已停用，如需恢复请联系管理员。
             </div>
 
-            <form v-else class="space-y-4" @submit.prevent="submitApplication">
+            <form v-if="canApply" class="space-y-4" @submit.prevent="submitApplication">
               <div>
                 <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">申请说明（可选）</label>
                 <textarea
@@ -161,7 +164,7 @@
               </div>
               <div class="flex justify-end">
                 <button class="btn btn-primary" type="submit" :disabled="submitting">
-                  <span>{{ submitting ? '提交中...' : '提交申请' }}</span>
+                  <span>{{ submitting ? '提交中...' : submitLabel }}</span>
                 </button>
               </div>
             </form>
@@ -194,7 +197,10 @@ const applicationForm = reactive({
 const loading = computed(() => referralStore.loading)
 const summary = computed(() => referralStore.summary)
 const profile = computed(() => referralStore.profile)
-const isApproved = computed(() => profile.value?.status === 'approved')
+const canViewDashboard = computed(() => profile.value?.status === 'approved' || profile.value?.status === 'disabled')
+const canWithdraw = computed(() => referralStore.canWithdraw)
+const canApply = computed(() => !profile.value || profile.value.status === 'rejected')
+const submitLabel = computed(() => profile.value?.status === 'rejected' ? '重新提交申请' : '提交申请')
 const inviteLink = computed(() => {
   if (!summary.value || typeof window === 'undefined') return ''
   return `${window.location.origin}/r/${encodeURIComponent(summary.value.invite_code)}`

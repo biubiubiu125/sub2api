@@ -12,6 +12,7 @@ import (
 	"time"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	"github.com/Wei-Shaw/sub2api/migrations"
 	"github.com/stretchr/testify/require"
 )
 
@@ -109,6 +110,22 @@ func TestMigrationChecksumCompatibilityRules_CoverEditedUpgradeCompatibilityMigr
 		require.Truef(t, ok, "missing compatibility rule for %s", name)
 		require.NotEmpty(t, rule.fileChecksum)
 		require.NotEmpty(t, rule.acceptedDBChecksum)
+	}
+}
+
+func TestCustomReferralCompatibilityMigrationsRemainImmutable(t *testing.T) {
+	tests := map[string]string{
+		"134_custom_referral_schema_compat.sql":          "7f71001d08f7b506629752ccd212f0050832e4004f62632e16d1d4839e4c53dc",
+		"135_custom_commission_accounts_user_compat.sql": "04490b5c4791361d11316698481a7a4a67c79a7f1862de606da6f2e4e967d9c0",
+		"136_custom_referral_withdrawal_idempotency.sql": "42b58625ff94384c0489a05fd4cb94a8c94d73c77d2caa89d91500924ebfab43",
+	}
+
+	for name, expected := range tests {
+		t.Run(name, func(t *testing.T) {
+			content, err := migrations.FS.ReadFile(name)
+			require.NoError(t, err)
+			require.Equal(t, expected, migrationChecksum(string(content)))
+		})
 	}
 }
 

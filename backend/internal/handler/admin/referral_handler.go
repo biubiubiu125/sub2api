@@ -1,10 +1,12 @@
 package admin
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -27,6 +29,7 @@ func NewReferralHandler(referralService *service.CustomReferralService, assetSer
 
 type approveAffiliateRequest struct {
 	RateOverride *float64 `json:"rate_override,omitempty"`
+	Reason       string   `json:"reason"`
 }
 
 type disableAffiliateRequest struct {
@@ -34,8 +37,17 @@ type disableAffiliateRequest struct {
 }
 
 type adjustAffiliateRequest struct {
-	Amount float64 `json:"amount"`
-	Remark string  `json:"remark"`
+	Amount         float64 `json:"amount"`
+	Remark         string  `json:"remark"`
+	IdempotencyKey string  `json:"idempotency_key"`
+}
+
+type reverseCommissionRequest struct {
+	OrderID        int64   `json:"order_id"`
+	CommissionID   int64   `json:"commission_id"`
+	RefundAmount   float64 `json:"refund_amount"`
+	Reason         string  `json:"reason"`
+	IdempotencyKey string  `json:"idempotency_key"`
 }
 
 type reviewWithdrawalRequest struct {
@@ -56,6 +68,17 @@ type updateReferralSettingsRequest struct {
 	SettleFreezeDays  int     `json:"settle_freeze_days"`
 	MinWithdrawAmount float64 `json:"min_withdraw_amount"`
 	WithdrawFee       float64 `json:"withdraw_fee"`
+	Reason            string  `json:"reason"`
+}
+
+func referralAdminAuditContext(c *gin.Context, action string, adminID int64, reason string) service.CustomReferralAdminAuditContext {
+	return service.CustomReferralAdminAuditContext{
+		Action:      action,
+		AdminUserID: adminID,
+		IP:          c.ClientIP(),
+		UserAgent:   c.GetHeader("User-Agent"),
+		Reason:      strings.TrimSpace(reason),
+	}
 }
 
 func (h *ReferralHandler) Overview(c *gin.Context) {
@@ -82,6 +105,11 @@ func (h *ReferralHandler) UpdateSettings(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok || subject.UserID <= 0 {
+		response.Unauthorized(c, "Unauthorized")
+		return
+	}
 	config, err := h.referralService.UpdateConfig(c.Request.Context(), service.CustomReferralAdminConfig{
 		Provider:          strings.TrimSpace(req.Provider),
 		CookieTTLDays:     req.CookieTTLDays,
@@ -89,7 +117,7 @@ func (h *ReferralHandler) UpdateSettings(c *gin.Context) {
 		SettleFreezeDays:  req.SettleFreezeDays,
 		MinWithdrawAmount: req.MinWithdrawAmount,
 		WithdrawFee:       req.WithdrawFee,
-	})
+	}, referralAdminAuditContext(c, "referral_settings_update", subject.UserID, req.Reason))
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -149,6 +177,29 @@ func (h *ReferralHandler) ApproveAffiliate(c *gin.Context) {
 	response.Success(c, item)
 }
 
+func (h *ReferralHandler) SetAffiliateRateOverride(c *gin.Context) {
+	userID, ok := parseReferralUserID(c)
+	if !ok {
+		return
+	}
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok || subject.UserID <= 0 {
+		response.Unauthorized(c, "Unauthorized")
+		return
+	}
+	var req approveAffiliateRequest
+	if err := c.ShouldBindJSON(&req); err != nil && err.Error() != "EOF" {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	item, err := h.referralService.SetAffiliateRateOverride(c.Request.Context(), userID, req.RateOverride, referralAdminAuditContext(c, "affiliate_rate_override", subject.UserID, req.Reason))
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, item)
+}
+
 func (h *ReferralHandler) DisableAffiliate(c *gin.Context) {
 	userID, ok := parseReferralUserID(c)
 	if !ok {
@@ -164,7 +215,7 @@ func (h *ReferralHandler) DisableAffiliate(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-	item, err := h.referralService.DisableAffiliate(c.Request.Context(), userID, subject.UserID, req.Reason)
+	item, err := h.referralService.DisableAffiliate(c.Request.Context(), userID, subject.UserID, req.Reason, referralAdminAuditContext(c, "affiliate_disable", subject.UserID, req.Reason))
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -187,7 +238,7 @@ func (h *ReferralHandler) RejectAffiliate(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-	item, err := h.referralService.RejectAffiliate(c.Request.Context(), userID, subject.UserID, req.Reason)
+	item, err := h.referralService.RejectAffiliate(c.Request.Context(), userID, subject.UserID, req.Reason, referralAdminAuditContext(c, "affiliate_reject", subject.UserID, req.Reason))
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -205,7 +256,7 @@ func (h *ReferralHandler) RestoreAffiliate(c *gin.Context) {
 		response.Unauthorized(c, "Unauthorized")
 		return
 	}
-	item, err := h.referralService.RestoreAffiliate(c.Request.Context(), userID, subject.UserID)
+	item, err := h.referralService.RestoreAffiliate(c.Request.Context(), userID, subject.UserID, referralAdminAuditContext(c, "affiliate_restore", subject.UserID, ""))
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -228,7 +279,22 @@ func (h *ReferralHandler) AdjustAffiliate(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-	item, err := h.referralService.AdjustAffiliateCommission(c.Request.Context(), userID, subject.UserID, req.Amount, req.Remark)
+	idempotencyKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	if idempotencyKey == "" {
+		idempotencyKey = strings.TrimSpace(req.IdempotencyKey)
+	}
+	if idempotencyKey == "" {
+		response.ErrorFrom(c, service.ErrCustomReferralInvalidIdempotency)
+		return
+	}
+	item, err := h.referralService.AdjustAffiliateCommission(c.Request.Context(), service.CustomReferralAdjustInput{
+		UserID:         userID,
+		AdminUserID:    subject.UserID,
+		Delta:          req.Amount,
+		Remark:         strings.TrimSpace(req.Remark),
+		IdempotencyKey: idempotencyKey,
+		Audit:          referralAdminAuditContext(c, "affiliate_commission_adjust", subject.UserID, req.Remark),
+	})
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -251,7 +317,7 @@ func (h *ReferralHandler) FreezeSettlement(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-	item, err := h.referralService.FreezeSettlement(c.Request.Context(), userID, subject.UserID, req.Reason)
+	item, err := h.referralService.FreezeSettlement(c.Request.Context(), userID, subject.UserID, req.Reason, referralAdminAuditContext(c, "settlement_freeze", subject.UserID, req.Reason))
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -269,7 +335,7 @@ func (h *ReferralHandler) RestoreSettlement(c *gin.Context) {
 		response.Unauthorized(c, "Unauthorized")
 		return
 	}
-	item, err := h.referralService.RestoreSettlement(c.Request.Context(), userID, subject.UserID)
+	item, err := h.referralService.RestoreSettlement(c.Request.Context(), userID, subject.UserID, referralAdminAuditContext(c, "settlement_restore", subject.UserID, ""))
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -292,7 +358,7 @@ func (h *ReferralHandler) FreezeWithdrawal(c *gin.Context) {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-	item, err := h.referralService.FreezeWithdrawal(c.Request.Context(), userID, subject.UserID, req.Reason)
+	item, err := h.referralService.FreezeWithdrawal(c.Request.Context(), userID, subject.UserID, req.Reason, referralAdminAuditContext(c, "withdrawal_freeze", subject.UserID, req.Reason))
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -310,7 +376,7 @@ func (h *ReferralHandler) RestoreWithdrawal(c *gin.Context) {
 		response.Unauthorized(c, "Unauthorized")
 		return
 	}
-	item, err := h.referralService.RestoreWithdrawal(c.Request.Context(), userID, subject.UserID)
+	item, err := h.referralService.RestoreWithdrawal(c.Request.Context(), userID, subject.UserID, referralAdminAuditContext(c, "withdrawal_restore", subject.UserID, ""))
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -357,6 +423,52 @@ func (h *ReferralHandler) ListCommissions(c *gin.Context) {
 		return
 	}
 	response.Paginated(c, items, total, page, pageSize)
+}
+
+func (h *ReferralHandler) ListCommissionJobs(c *gin.Context) {
+	page, pageSize := response.ParsePagination(c)
+	items, total, err := h.referralService.ListCommissionJobs(c.Request.Context(), service.CustomReferralCommissionListParams{
+		Page:     page,
+		PageSize: pageSize,
+		Status:   strings.TrimSpace(c.Query("status")),
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Paginated(c, items, total, page, pageSize)
+}
+
+func (h *ReferralHandler) ReverseCommission(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok || subject.UserID <= 0 {
+		response.Unauthorized(c, "Unauthorized")
+		return
+	}
+	var req reverseCommissionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	idempotencyKey := strings.TrimSpace(c.GetHeader("Idempotency-Key"))
+	if idempotencyKey == "" {
+		idempotencyKey = strings.TrimSpace(req.IdempotencyKey)
+	}
+	item, err := h.referralService.ReverseCommissionManually(c.Request.Context(), service.CustomReferralManualReverseInput{
+		OrderID:        req.OrderID,
+		CommissionID:   req.CommissionID,
+		RefundAmount:   req.RefundAmount,
+		Reason:         strings.TrimSpace(req.Reason),
+		IdempotencyKey: idempotencyKey,
+		AdminUserID:    subject.UserID,
+		IP:             c.ClientIP(),
+		UserAgent:      c.GetHeader("User-Agent"),
+	})
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, item)
 }
 
 func (h *ReferralHandler) ListWithdrawals(c *gin.Context) {
@@ -476,13 +588,18 @@ func (h *ReferralHandler) MarkWithdrawalPaid(c *gin.Context) {
 }
 
 func (h *ReferralHandler) UploadAsset(c *gin.Context) {
-	if h == nil || h.assetService == nil {
+	if h == nil || h.assetService == nil || h.referralService == nil {
 		response.InternalError(c, "asset service unavailable")
 		return
 	}
+	maxBytes := h.assetService.MaxImageBytes()
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
 		response.BadRequest(c, "请选择要上传的图片")
+		return
+	}
+	if fileHeader.Size > maxBytes {
+		response.BadRequest(c, fmt.Sprintf("上传图片不能超过 %.1f MB", float64(maxBytes)/(1024*1024)))
 		return
 	}
 	file, err := fileHeader.Open()
@@ -492,15 +609,24 @@ func (h *ReferralHandler) UploadAsset(c *gin.Context) {
 	}
 	defer func() { _ = file.Close() }()
 
-	data, err := io.ReadAll(file)
+	data, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
 	if err != nil {
 		response.InternalError(c, "读取上传文件失败")
+		return
+	}
+	if int64(len(data)) > maxBytes {
+		response.BadRequest(c, fmt.Sprintf("上传图片不能超过 %.1f MB", float64(maxBytes)/(1024*1024)))
 		return
 	}
 	contentType := http.DetectContentType(data)
 	url, err := h.assetService.SaveImage("payment-proof", data, contentType)
 	if err != nil {
 		response.BadRequest(c, err.Error())
+		return
+	}
+	url, err = h.referralService.SignReferralAssetURL(url, time.Now())
+	if err != nil {
+		response.InternalError(c, "asset signing unavailable")
 		return
 	}
 	response.Success(c, gin.H{"url": url})

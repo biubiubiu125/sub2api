@@ -115,6 +115,36 @@ func (h *PaymentHandler) RetryFulfillment(c *gin.Context) {
 	response.Success(c, gin.H{"message": "fulfillment retried"})
 }
 
+// RetryReferralCommission retries custom referral commission creation for a completed order.
+// POST /api/v1/admin/payment/orders/:id/retry-referral-commission
+func (h *PaymentHandler) RetryReferralCommission(c *gin.Context) {
+	orderID, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	amount, err := h.paymentService.RetryCustomReferralCommission(c.Request.Context(), orderID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"commission": amount})
+}
+
+// RetryReferralRefund retries custom referral commission reversal for a refunded order.
+// POST /api/v1/admin/payment/orders/:id/retry-referral-refund
+func (h *PaymentHandler) RetryReferralRefund(c *gin.Context) {
+	orderID, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	amount, err := h.paymentService.RetryCustomReferralRefund(c.Request.Context(), orderID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"reversed": amount})
+}
+
 func sanitizeAdminPaymentOrdersForResponse(orders []*dbent.PaymentOrder) []*dbent.PaymentOrder {
 	if len(orders) == 0 {
 		return orders

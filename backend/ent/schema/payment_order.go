@@ -43,6 +43,8 @@ func (PaymentOrder) Fields() []ent.Field {
 			SchemaType(map[string]string{dialect.Postgres: "text"}),
 
 		// 金额信息
+		// Amounts remain float64 at the generated Ent/API boundary for compatibility.
+		// PostgreSQL stores them as DECIMAL, and referral money math converts through moneyx.
 		field.Float("amount").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,2)"}),
 		field.Float("pay_amount").
@@ -50,6 +52,26 @@ func (PaymentOrder) Fields() []ent.Field {
 		field.Float("fee_rate").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}).
 			Default(0),
+		field.Float("commission_base_amount").
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,2)"}).
+			Default(0),
+		field.Int64("custom_referral_affiliate_id").
+			Optional().
+			Nillable(),
+		field.Float("custom_referral_rate").
+			SchemaType(map[string]string{dialect.Postgres: "decimal(10,4)"}).
+			Default(0),
+		field.String("custom_referral_commission_status").
+			MaxLen(32).
+			Default(""),
+		field.String("custom_referral_commission_error").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "text"}),
+		field.Time("custom_referral_commission_at").
+			Optional().
+			Nillable().
+			SchemaType(map[string]string{dialect.Postgres: "timestamptz"}),
 		field.String("recharge_code").
 			MaxLen(64),
 
@@ -188,6 +210,9 @@ func (PaymentOrder) Indexes() []ent.Index {
 		index.Fields("out_trade_no").
 			Unique().
 			Annotations(entsql.IndexWhere("out_trade_no <> ''")),
+		index.Fields("payment_trade_no").
+			Unique().
+			Annotations(entsql.IndexWhere("payment_trade_no <> ''")),
 		index.Fields("user_id"),
 		index.Fields("status"),
 		index.Fields("expires_at"),
@@ -195,5 +220,7 @@ func (PaymentOrder) Indexes() []ent.Index {
 		index.Fields("paid_at"),
 		index.Fields("payment_type", "paid_at"),
 		index.Fields("order_type"),
+		index.Fields("custom_referral_affiliate_id"),
+		index.Fields("custom_referral_commission_status"),
 	}
 }

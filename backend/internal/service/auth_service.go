@@ -130,14 +130,69 @@ func (s *AuthService) SetCustomReferralService(customReferralService *CustomRefe
 }
 
 func (s *AuthService) bootstrapAffiliateProfile(ctx context.Context, userID int64, affiliateCode string) {
-	if s == nil || s.customReferralService == nil || userID <= 0 || !s.customReferralService.IsEnabled(ctx) {
-		return
-	}
-	if err := s.customReferralService.BindInviteeByCode(ctx, userID, affiliateCode); err != nil &&
-		!errors.Is(err, ErrCustomReferralAlreadyBound) &&
-		!errors.Is(err, ErrCustomReferralAffiliateNotFound) {
+	if err := s.bindAffiliateProfileForSignup(ctx, userID, affiliateCode); err != nil {
 		logger.LegacyPrintf("service.auth", "[Auth] Failed to bind custom referral inviter for user %d: %v", userID, err)
 	}
+}
+
+func (s *AuthService) bindAffiliateProfileForSignup(ctx context.Context, userID int64, affiliateCode string) error {
+	if s == nil || s.customReferralService == nil || userID <= 0 {
+		return nil
+	}
+	affiliateCode = strings.TrimSpace(affiliateCode)
+	if affiliateCode == "" || !s.customReferralService.IsEnabled(ctx) {
+		return nil
+	}
+	err := s.customReferralService.BindInviteeByCode(ctx, userID, affiliateCode)
+	if err == nil ||
+		errors.Is(err, ErrCustomReferralAlreadyBound) {
+		return nil
+	}
+	return err
+}
+
+func (s *AuthService) createSignupUserWithReferralBinding(ctx context.Context, user *User, affiliateCode string, invitationRedeemCode *RedeemCode) error {
+	needsTx := strings.TrimSpace(affiliateCode) != "" || invitationRedeemCode != nil
+	if !needsTx {
+		return s.userRepo.Create(ctx, user)
+	}
+	if s.entClient == nil {
+		return ErrServiceUnavailable
+	}
+	tx, err := s.entClient.Tx(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	txCtx := dbent.NewTxContext(ctx, tx)
+	if err := s.userRepo.Create(txCtx, user); err != nil {
+		return err
+	}
+	if err := s.bindAffiliateProfileForSignup(txCtx, user.ID, affiliateCode); err != nil {
+		return err
+	}
+	if invitationRedeemCode != nil {
+		if err := s.redeemRepo.Use(txCtx, invitationRedeemCode.ID, user.ID); err != nil {
+			return ErrInvitationCodeInvalid
+		}
+	}
+	return tx.Commit()
+}
+
+func (s *AuthService) validateAffiliateSignupCode(ctx context.Context, affiliateCode string) error {
+	if s == nil || s.customReferralService == nil || strings.TrimSpace(affiliateCode) == "" {
+		return nil
+	}
+	if err := s.customReferralService.ValidateInviteCodeForSignup(ctx, affiliateCode); err != nil {
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to validate custom referral invite code before signup: %v", err)
+		if errors.Is(err, ErrCustomReferralAffiliateNotFound) ||
+			errors.Is(err, ErrCustomReferralAffiliateDisabled) ||
+			errors.Is(err, ErrCustomReferralSelfInvite) {
+			return err
+		}
+		return ErrServiceUnavailable
+	}
+	return nil
 }
 
 // Register 用户注册，返回token和用户
@@ -212,6 +267,9 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 	if existsEmail {
 		return "", nil, ErrEmailExists
 	}
+	if err := s.validateAffiliateSignupCode(ctx, affiliateCodeRaw); err != nil {
+		return "", nil, err
+	}
 
 	// 密码哈希
 	hashedPassword, err := s.HashPassword(password)
@@ -238,22 +296,19 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		Status:       StatusActive,
 	}
 
-	if err := s.userRepo.Create(ctx, user); err != nil {
+	if err := s.createSignupUserWithReferralBinding(ctx, user, affiliateCodeRaw, invitationRedeemCode); err != nil {
 		// 优先检查邮箱冲突错误（竞态条件下可能发生）
 		if errors.Is(err, ErrEmailExists) {
 			return "", nil, ErrEmailExists
+		}
+		if errors.Is(err, ErrInvitationCodeInvalid) {
+			return "", nil, ErrInvitationCodeInvalid
 		}
 		logger.LegacyPrintf("service.auth", "[Auth] Database error creating user: %v", err)
 		return "", nil, ErrServiceUnavailable
 	}
 	s.postAuthUserBootstrap(ctx, user, "email", true)
 	s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
-	s.bootstrapAffiliateProfile(ctx, user.ID, affiliateCodeRaw)
-	if invitationRedeemCode != nil {
-		if err := s.redeemRepo.Use(ctx, invitationRedeemCode.ID, user.ID); err != nil {
-			logger.LegacyPrintf("service.auth", "[Auth] Failed to mark invitation code as used for user %d: %v", user.ID, err)
-		}
-	}
 	if promoCode != "" && s.promoService != nil && s.settingService != nil && s.settingService.IsPromoCodeEnabled(ctx) {
 		if err := s.promoService.ApplyPromoCode(ctx, user.ID, promoCode); err != nil {
 			logger.LegacyPrintf("service.auth", "[Auth] Failed to apply promo code for user %d: %v", user.ID, err)
@@ -611,6 +666,9 @@ func (s *AuthService) LoginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 				}
 				invitationRedeemCode = redeemCode
 			}
+			if err := s.validateAffiliateSignupCode(ctx, affiliateCodeRaw); err != nil {
+				return nil, nil, err
+			}
 
 			randomPassword, err := randomHexString(32)
 			if err != nil {
@@ -641,7 +699,7 @@ func (s *AuthService) LoginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 				SignupSource: signupSource,
 			}
 
-			if s.entClient != nil && invitationRedeemCode != nil {
+			if s.entClient != nil && (invitationRedeemCode != nil || strings.TrimSpace(affiliateCodeRaw) != "") {
 				tx, err := s.entClient.Tx(ctx)
 				if err != nil {
 					logger.LegacyPrintf("service.auth", "[Auth] Failed to begin transaction for oauth registration: %v", err)
@@ -662,8 +720,14 @@ func (s *AuthService) LoginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 						return nil, nil, ErrServiceUnavailable
 					}
 				} else {
-					if err := s.redeemRepo.Use(txCtx, invitationRedeemCode.ID, newUser.ID); err != nil {
-						return nil, nil, ErrInvitationCodeInvalid
+					if err := s.bindAffiliateProfileForSignup(txCtx, newUser.ID, affiliateCodeRaw); err != nil {
+						logger.LegacyPrintf("service.auth", "[Auth] Failed to bind custom referral inviter in oauth transaction: %v", err)
+						return nil, nil, ErrServiceUnavailable
+					}
+					if invitationRedeemCode != nil {
+						if err := s.redeemRepo.Use(txCtx, invitationRedeemCode.ID, newUser.ID); err != nil {
+							return nil, nil, ErrInvitationCodeInvalid
+						}
 					}
 					if err := tx.Commit(); err != nil {
 						logger.LegacyPrintf("service.auth", "[Auth] Failed to commit oauth registration transaction: %v", err)
@@ -672,9 +736,12 @@ func (s *AuthService) LoginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 					user = newUser
 					s.postAuthUserBootstrap(ctx, user, signupSource, false)
 					s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
-					s.bootstrapAffiliateProfile(ctx, user.ID, affiliateCodeRaw)
 				}
 			} else {
+				if invitationRedeemCode != nil || strings.TrimSpace(affiliateCodeRaw) != "" {
+					logger.LegacyPrintf("service.auth", "%s", "[Auth] Registration requires transactional invite binding but ent client is unavailable")
+					return nil, nil, ErrServiceUnavailable
+				}
 				if err := s.userRepo.Create(ctx, newUser); err != nil {
 					if errors.Is(err, ErrEmailExists) {
 						user, err = s.userRepo.GetByEmail(ctx, email)

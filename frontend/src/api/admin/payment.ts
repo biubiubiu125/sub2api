@@ -103,6 +103,16 @@ export const adminPaymentAPI = {
     return apiClient.post(`/admin/payment/orders/${id}/retry`)
   },
 
+  /** Retry custom referral commission for a completed order */
+  retryReferralCommission(id: number) {
+    return apiClient.post<{ commission: number }>(`/admin/payment/orders/${id}/retry-referral-commission`)
+  },
+
+  /** Retry custom referral commission reversal for a refunded order */
+  retryReferralRefund(id: number) {
+    return apiClient.post<{ reversed: number }>(`/admin/payment/orders/${id}/retry-referral-refund`)
+  },
+
   /** Process a refund */
   refundOrder(id: number, data: { amount: number; reason: string; deduct_balance?: boolean; force?: boolean }) {
     return apiClient.post(`/admin/payment/orders/${id}/refund`, data)
