@@ -119,3 +119,85 @@ func TestRecordAdminAuditWithExecutorPersistsManualReverseContext(t *testing.T) 
 	require.NoError(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestCustomReferralCommissionOrderFilter(t *testing.T) {
+	tests := []struct {
+		name    string
+		columns map[string]struct{}
+		alias   string
+		want    string
+	}{
+		{
+			name: "legacy order_id only",
+			columns: map[string]struct{}{
+				"order_id": {},
+			},
+			want: "order_id = $1",
+		},
+		{
+			name: "source_order_id only",
+			columns: map[string]struct{}{
+				"source_order_id": {},
+			},
+			alias: "c",
+			want:  "c.source_order_id = $1",
+		},
+		{
+			name: "compat columns present",
+			columns: map[string]struct{}{
+				"order_id":        {},
+				"source_order_id": {},
+			},
+			alias: "c",
+			want:  "(c.order_id = $1 OR c.source_order_id = $1)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := customReferralCommissionOrderFilter(tt.columns, tt.alias, "$1")
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestCustomReferralCommissionOrderSelectExpr(t *testing.T) {
+	tests := []struct {
+		name    string
+		columns map[string]struct{}
+		alias   string
+		want    string
+	}{
+		{
+			name: "legacy order_id only",
+			columns: map[string]struct{}{
+				"order_id": {},
+			},
+			want: "order_id",
+		},
+		{
+			name: "source_order_id only",
+			columns: map[string]struct{}{
+				"source_order_id": {},
+			},
+			alias: "c",
+			want:  "c.source_order_id",
+		},
+		{
+			name: "compat columns present",
+			columns: map[string]struct{}{
+				"order_id":        {},
+				"source_order_id": {},
+			},
+			alias: "c",
+			want:  "COALESCE(c.order_id, c.source_order_id)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := customReferralCommissionOrderSelectExpr(tt.columns, tt.alias)
+			require.Equal(t, tt.want, got)
+		})
+	}
+}

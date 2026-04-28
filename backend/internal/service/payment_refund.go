@@ -20,8 +20,6 @@ import (
 
 // --- Refund Flow ---
 
-var ErrPaymentRefundUnsupported = infraerrors.Forbidden("REFUND_UNSUPPORTED", "refund is not supported yet")
-
 // getOrderProviderInstance looks up the provider instance that processed this order.
 // For legacy orders without provider_instance_id, it resolves only when the
 // historical instance is uniquely identifiable from the stored order fields.
@@ -151,7 +149,7 @@ func psLegacyOrderMatchesInstance(orderPaymentType string, inst *dbent.PaymentPr
 }
 
 func (s *PaymentService) RequestRefund(ctx context.Context, oid, uid int64, reason string) error {
-	return ErrPaymentRefundUnsupported
+	return s.requestRefundEnabled(ctx, oid, uid, reason)
 }
 
 func (s *PaymentService) requestRefundEnabled(ctx context.Context, oid, uid int64, reason string) error {
@@ -206,7 +204,7 @@ func (s *PaymentService) validateRefundRequest(ctx context.Context, oid, uid int
 }
 
 func (s *PaymentService) PrepareRefund(ctx context.Context, oid int64, amt float64, reason string, force, deduct bool) (*RefundPlan, *RefundResult, error) {
-	return nil, nil, ErrPaymentRefundUnsupported
+	return s.prepareRefundEnabled(ctx, oid, amt, reason, force, deduct)
 }
 
 func (s *PaymentService) prepareRefundEnabled(ctx context.Context, oid int64, amt float64, reason string, force, deduct bool) (*RefundPlan, *RefundResult, error) {
@@ -214,7 +212,7 @@ func (s *PaymentService) prepareRefundEnabled(ctx context.Context, oid int64, am
 	if err != nil {
 		return nil, nil, infraerrors.NotFound("NOT_FOUND", "order not found")
 	}
-	ok := []string{OrderStatusCompleted, OrderStatusRefundRequested, OrderStatusRefundFailed}
+	ok := []string{OrderStatusCompleted, OrderStatusPartiallyRefunded, OrderStatusRefundRequested, OrderStatusRefundFailed}
 	if !psSliceContains(ok, o.Status) {
 		return nil, nil, infraerrors.BadRequest("INVALID_STATUS", "order status does not allow refund")
 	}
@@ -234,10 +232,15 @@ func (s *PaymentService) prepareRefundEnabled(ctx context.Context, oid int64, am
 	if math.IsNaN(amt) || math.IsInf(amt, 0) {
 		return nil, nil, infraerrors.BadRequest("INVALID_AMOUNT", "invalid refund amount")
 	}
-	if amt <= 0 {
-		amt = o.Amount
+	existingRefundAmount := moneyx.NonNegative(moneyx.Currency(o.RefundAmount)).InexactFloat64()
+	remainingRefundAmount := moneyx.Currency(o.Amount).Sub(moneyx.Currency(existingRefundAmount)).InexactFloat64()
+	if remainingRefundAmount <= 0 {
+		return nil, nil, infraerrors.BadRequest("REFUND_AMOUNT_EXCEEDED", "refund amount exceeds recharge")
 	}
-	if moneyx.Currency(amt).GreaterThan(moneyx.Currency(o.Amount)) {
+	if amt <= 0 {
+		amt = remainingRefundAmount
+	}
+	if moneyx.Currency(amt).GreaterThan(moneyx.Currency(remainingRefundAmount)) {
 		return nil, nil, infraerrors.BadRequest("REFUND_AMOUNT_EXCEEDED", "refund amount exceeds recharge")
 	}
 	ga := calculateGatewayRefundAmount(o.Amount, o.PayAmount, amt)
@@ -248,7 +251,8 @@ func (s *PaymentService) prepareRefundEnabled(ctx context.Context, oid int64, am
 	if rr == "" {
 		rr = fmt.Sprintf("refund order:%d", o.ID)
 	}
-	p := &RefundPlan{OrderID: oid, Order: o, RefundAmount: amt, GatewayAmount: ga, Reason: rr, Force: force, DeductBalance: deduct, DeductionType: payment.DeductionTypeNone}
+	totalRefundAmount := moneyx.Currency(existingRefundAmount).Add(moneyx.Currency(amt)).InexactFloat64()
+	p := &RefundPlan{OrderID: oid, Order: o, RefundAmount: amt, TotalRefundAmount: totalRefundAmount, GatewayAmount: ga, Reason: rr, Force: force, DeductBalance: deduct, DeductionType: payment.DeductionTypeNone}
 	if deduct {
 		if er := s.prepDeduct(ctx, o, p, force); er != nil {
 			return nil, er, nil
@@ -287,7 +291,7 @@ func (s *PaymentService) prepDeduct(ctx context.Context, o *dbent.PaymentOrder, 
 }
 
 func (s *PaymentService) ExecuteRefund(ctx context.Context, p *RefundPlan) (*RefundResult, error) {
-	c, err := s.entClient.PaymentOrder.Update().Where(paymentorder.IDEQ(p.OrderID), paymentorder.StatusIn(OrderStatusCompleted, OrderStatusRefundRequested, OrderStatusRefundFailed)).SetStatus(OrderStatusRefunding).Save(ctx)
+	c, err := s.entClient.PaymentOrder.Update().Where(paymentorder.IDEQ(p.OrderID), paymentorder.StatusIn(OrderStatusCompleted, OrderStatusPartiallyRefunded, OrderStatusRefundRequested, OrderStatusRefundFailed)).SetStatus(OrderStatusRefunding).Save(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("lock: %w", err)
 	}
@@ -389,16 +393,16 @@ func (s *PaymentService) handleGwFail(ctx context.Context, p *RefundPlan, gErr e
 
 func (s *PaymentService) markRefundOk(ctx context.Context, p *RefundPlan) (*RefundResult, error) {
 	fs := OrderStatusRefunded
-	if moneyx.Currency(p.RefundAmount).LessThan(moneyx.Currency(p.Order.Amount)) {
+	if moneyx.Currency(p.TotalRefundAmount).LessThan(moneyx.Currency(p.Order.Amount)) {
 		fs = OrderStatusPartiallyRefunded
 	}
 	now := time.Now()
-	_, err := s.entClient.PaymentOrder.UpdateOneID(p.OrderID).SetStatus(fs).SetRefundAmount(p.RefundAmount).SetRefundReason(p.Reason).SetRefundAt(now).SetForceRefund(p.Force).Save(ctx)
+	_, err := s.entClient.PaymentOrder.UpdateOneID(p.OrderID).SetStatus(fs).SetRefundAmount(p.TotalRefundAmount).SetRefundReason(p.Reason).SetRefundAt(now).SetForceRefund(p.Force).Save(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("mark refund: %w", err)
 	}
 	reversed, reversalErr := s.applyCustomReferralRefundForOrder(ctx, p)
-	auditDetail := map[string]any{"refundAmount": p.RefundAmount, "reason": p.Reason, "balanceDeducted": p.BalanceToDeduct, "force": p.Force}
+	auditDetail := map[string]any{"refundAmount": p.RefundAmount, "totalRefundAmount": p.TotalRefundAmount, "reason": p.Reason, "balanceDeducted": p.BalanceToDeduct, "force": p.Force}
 	if reversed > 0 {
 		auditDetail["referralReversed"] = reversed
 	}
@@ -420,7 +424,7 @@ func (s *PaymentService) applyCustomReferralRefundForOrder(ctx context.Context, 
 	if s == nil || s.customReferralService == nil || p == nil || p.Order == nil || p.RefundAmount <= 0 {
 		return 0, nil
 	}
-	refundAmount := customReferralRefundBaseAmount(p.Order, p.RefundAmount, p.GatewayAmount)
+	refundAmount := customReferralRefundBaseAmount(p.Order, p.TotalRefundAmount, p.GatewayAmount)
 	if refundAmount <= 0 {
 		return 0, nil
 	}
@@ -440,10 +444,11 @@ func (s *PaymentService) applyCustomReferralRefundForOrder(ctx context.Context, 
 		return 0, nil
 	}
 	s.writeAuditLog(ctx, p.OrderID, "CUSTOM_REFERRAL_COMMISSION_REVERSED", "system", map[string]any{
-		"refundAmount":   refundAmount,
-		"orderRefund":    p.RefundAmount,
-		"gatewayRefund":  p.GatewayAmount,
-		"reversedAmount": reversed,
+		"refundAmount":           refundAmount,
+		"incrementalOrderRefund": p.RefundAmount,
+		"totalOrderRefund":       p.TotalRefundAmount,
+		"gatewayRefund":          p.GatewayAmount,
+		"reversedAmount":         reversed,
 	})
 	return reversed, nil
 }
@@ -528,6 +533,8 @@ func (s *PaymentService) restoreStatus(ctx context.Context, p *RefundPlan) {
 	rs := OrderStatusCompleted
 	if p.Order.Status == OrderStatusRefundRequested {
 		rs = OrderStatusRefundRequested
+	} else if p.Order.Status == OrderStatusPartiallyRefunded {
+		rs = OrderStatusPartiallyRefunded
 	}
 	_, _ = s.entClient.PaymentOrder.UpdateOneID(p.OrderID).SetStatus(rs).Save(ctx)
 }
