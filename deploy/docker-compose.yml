@@ -145,6 +145,18 @@ services:
       # Proxy for accessing GitHub (online updates + pricing data)
       # Examples: http://host:port, socks5://host:port
       - UPDATE_PROXY_URL=${UPDATE_PROXY_URL:-}
+
+      # =======================================================================
+      # Register / Referral Landing Rate Limiting
+      # =======================================================================
+      - RATE_LIMIT_REGISTER_ENABLED=${RATE_LIMIT_REGISTER_ENABLED:-true}
+      - RATE_LIMIT_REGISTER_PER_IP_PER_MINUTE=${RATE_LIMIT_REGISTER_PER_IP_PER_MINUTE:-5}
+      - RATE_LIMIT_REGISTER_PER_EMAIL_PER_MINUTE=${RATE_LIMIT_REGISTER_PER_EMAIL_PER_MINUTE:-0}
+      - RATE_LIMIT_REGISTER_PER_EMAIL_DOMAIN_PER_MINUTE=${RATE_LIMIT_REGISTER_PER_EMAIL_DOMAIN_PER_MINUTE:-0}
+      - RATE_LIMIT_REGISTER_PER_INVITE_CODE_PER_MINUTE=${RATE_LIMIT_REGISTER_PER_INVITE_CODE_PER_MINUTE:-0}
+      - RATE_LIMIT_REFERRAL_LANDING_ENABLED=${RATE_LIMIT_REFERRAL_LANDING_ENABLED:-true}
+      - RATE_LIMIT_REFERRAL_LANDING_PER_IP_PER_MINUTE=${RATE_LIMIT_REFERRAL_LANDING_PER_IP_PER_MINUTE:-60}
+      - RATE_LIMIT_REFERRAL_LANDING_PER_INVITE_CODE_PER_MINUTE=${RATE_LIMIT_REFERRAL_LANDING_PER_INVITE_CODE_PER_MINUTE:-0}
     depends_on:
       postgres:
         condition: service_healthy
