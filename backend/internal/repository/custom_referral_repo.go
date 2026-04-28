@@ -3397,7 +3397,7 @@ SET status = $2,
 FROM custom_affiliates a
 WHERE w.id = $1
   AND w.affiliate_id = a.id
-  AND w.status IN ($7, $8)
+  AND w.status = $7
 RETURNING w.id, w.affiliate_id, a.user_id, w.amount::double precision`,
 				withdrawalID,
 				targetStatus,
@@ -3406,7 +3406,6 @@ RETURNING w.id, w.affiliate_id, a.user_id, w.amount::double precision`,
 				strings.TrimSpace(reason),
 				strings.TrimSpace(adminNote),
 				service.CustomReferralWithdrawalStatusPending,
-				service.CustomReferralWithdrawalStatusApproved,
 			)
 			if err != nil {
 				return err
