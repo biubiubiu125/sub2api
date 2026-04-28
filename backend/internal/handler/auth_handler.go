@@ -4,9 +4,11 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
+	ratelimit "github.com/Wei-Shaw/sub2api/internal/middleware"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -26,6 +28,7 @@ type AuthHandler struct {
 	redeemService         *service.RedeemService
 	totpService           *service.TotpService
 	customReferralService *service.CustomReferralService
+	registerRateLimiter   *ratelimit.RateLimiter
 }
 
 // NewAuthHandler creates a new AuthHandler
@@ -39,6 +42,13 @@ func NewAuthHandler(cfg *config.Config, authService *service.AuthService, userSe
 		redeemService: redeemService,
 		totpService:   totpService,
 	}
+}
+
+func (h *AuthHandler) SetRegisterRateLimiter(rateLimiter *ratelimit.RateLimiter) {
+	if h == nil {
+		return
+	}
+	h.registerRateLimiter = rateLimiter
 }
 
 // RegisterRequest represents the registration request payload
@@ -156,9 +166,18 @@ func (h *AuthHandler) isBackendModeEnabled(ctx context.Context) bool {
 // Register handles user registration
 // POST /api/v1/auth/register
 func (h *AuthHandler) Register(c *gin.Context) {
+	if err := h.enforceRegisterIPRateLimit(c); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
 	var req RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if err := h.enforceRegisterPostBindRateLimits(c, req); err != nil {
+		response.ErrorFrom(c, err)
 		return
 	}
 
@@ -168,14 +187,16 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	affiliateCode, affiliateSource := h.resolveAffiliateAttribution(c, req.AffCode)
+	registerCtx := service.ContextWithAffiliateAttribution(c.Request.Context(), affiliateCode, affiliateSource)
 	_, user, err := h.authService.RegisterWithVerification(
-		c.Request.Context(),
+		registerCtx,
 		req.Email,
 		req.Password,
 		req.VerifyCode,
 		req.PromoCode,
 		req.InvitationCode,
-		h.resolveAffiliateCode(c, req.AffCode),
+		affiliateCode,
 	)
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -210,6 +231,96 @@ func (h *AuthHandler) SendVerifyCode(c *gin.Context) {
 		Message:   "Verification code sent successfully",
 		Countdown: result.Countdown,
 	})
+}
+
+func (h *AuthHandler) enforceRegisterIPRateLimit(c *gin.Context) error {
+	if h == nil || h.registerRateLimiter == nil || c == nil {
+		return nil
+	}
+	settings := service.DefaultRegisterRateLimitSettings()
+	if h.settingSvc != nil {
+		settings = h.settingSvc.GetRegisterRateLimitSettings(c.Request.Context())
+	}
+	if !settings.Enabled {
+		return nil
+	}
+	if blocked, err := h.registerRateLimiter.CheckWithOptions(
+		c.Request.Context(),
+		"auth-register:ip:"+strings.TrimSpace(c.ClientIP()),
+		settings.PerIPPerMinute,
+		time.Minute,
+		ratelimit.RateLimitOptions{FailureMode: ratelimit.RateLimitFailClose},
+	); blocked {
+		return registerRateLimitError("ip", err)
+	}
+	return nil
+}
+
+func (h *AuthHandler) enforceRegisterPostBindRateLimits(c *gin.Context, req RegisterRequest) error {
+	if h == nil || h.registerRateLimiter == nil || c == nil {
+		return nil
+	}
+	settings := service.DefaultRegisterRateLimitSettings()
+	if h.settingSvc != nil {
+		settings = h.settingSvc.GetRegisterRateLimitSettings(c.Request.Context())
+	}
+	if !settings.Enabled {
+		return nil
+	}
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	if blocked, err := h.registerRateLimiter.CheckWithOptions(
+		c.Request.Context(),
+		"auth-register:email:"+email,
+		settings.PerEmailPerMinute,
+		time.Minute,
+		ratelimit.RateLimitOptions{FailureMode: ratelimit.RateLimitFailClose},
+	); blocked {
+		return registerRateLimitError("email", err)
+	}
+
+	if domain := registerEmailDomain(email); domain != "" {
+		if blocked, err := h.registerRateLimiter.CheckWithOptions(
+			c.Request.Context(),
+			"auth-register:email-domain:"+domain,
+			settings.PerEmailDomainPerMinute,
+			time.Minute,
+			ratelimit.RateLimitOptions{FailureMode: ratelimit.RateLimitFailClose},
+		); blocked {
+			return registerRateLimitError("email_domain", err)
+		}
+	}
+
+	affiliateCode, _ := h.resolveAffiliateAttribution(c, req.AffCode)
+	if blocked, err := h.registerRateLimiter.CheckWithOptions(
+		c.Request.Context(),
+		"auth-register:invite-code:"+strings.ToUpper(strings.TrimSpace(affiliateCode)),
+		settings.PerInviteCodePerMinute,
+		time.Minute,
+		ratelimit.RateLimitOptions{FailureMode: ratelimit.RateLimitFailClose},
+	); blocked {
+		return registerRateLimitError("invite_code", err)
+	}
+
+	return nil
+}
+
+func registerEmailDomain(email string) string {
+	at := strings.LastIndex(email, "@")
+	if at < 0 || at == len(email)-1 {
+		return ""
+	}
+	return email[at+1:]
+}
+
+func registerRateLimitError(scope string, cause error) error {
+	err := infraerrors.TooManyRequests("RATE_LIMIT_EXCEEDED", "rate limit exceeded")
+	if scope != "" {
+		err = err.WithMetadata(map[string]string{"scope": scope})
+	}
+	if cause != nil {
+		err = err.WithCause(cause)
+	}
+	return err
 }
 
 // Login handles user login

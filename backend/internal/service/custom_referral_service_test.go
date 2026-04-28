@@ -111,6 +111,8 @@ type customReferralCycleRepoStub struct {
 	affiliateByCode map[string]*CustomAffiliate
 	ancestorsByUser map[int64][]int64
 	bindCalled      bool
+	lastBindSource  string
+	lastBindCode    string
 }
 
 func (r *customReferralCycleRepoStub) GetApprovedAffiliateByCode(_ context.Context, code string) (*CustomAffiliate, error) {
@@ -132,8 +134,10 @@ func (r *customReferralCycleRepoStub) InviteeInInviterAncestorChain(_ context.Co
 	return false, nil
 }
 
-func (r *customReferralCycleRepoStub) BindInvitee(_ context.Context, _ int64, _ int64, _ int64, _ string, _ string, _ time.Time) (bool, error) {
+func (r *customReferralCycleRepoStub) BindInvitee(_ context.Context, _ int64, _ int64, _ int64, bindSource string, bindCode string, _ time.Time) (bool, error) {
 	r.bindCalled = true
+	r.lastBindSource = bindSource
+	r.lastBindCode = bindCode
 	return true, nil
 }
 
@@ -429,6 +433,29 @@ func TestUserCommissionDTOOmitsSensitiveFields(t *testing.T) {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("user commission payload leaked %q: %s", forbidden, body)
 		}
+	}
+}
+
+func TestCustomReferralBindInviteeByCodeUsesContextSource(t *testing.T) {
+	repo := &customReferralCycleRepoStub{
+		affiliateByCode: map[string]*CustomAffiliate{
+			"ABC123": {ID: 10, UserID: 20, InviteCode: "ABC123", Status: CustomAffiliateStatusApproved, AcquisitionEnabled: true},
+		},
+	}
+	settings := customReferralCycleSettingRepo{
+		SettingKeyCustomReferralProvider: CustomReferralProviderCustom,
+	}
+	svc := NewCustomReferralService(repo, settings, nil)
+
+	ctx := ContextWithAffiliateAttribution(context.Background(), "ABC123", AffiliateBindingSourceCode)
+	if err := svc.BindInviteeByCode(ctx, 30, "ABC123"); err != nil {
+		t.Fatalf("BindInviteeByCode error = %v", err)
+	}
+	if repo.lastBindSource != AffiliateBindingSourceCode {
+		t.Fatalf("BindInvitee source = %q, want %q", repo.lastBindSource, AffiliateBindingSourceCode)
+	}
+	if repo.lastBindCode != "ABC123" {
+		t.Fatalf("BindInvitee code = %q, want %q", repo.lastBindCode, "ABC123")
 	}
 }
 

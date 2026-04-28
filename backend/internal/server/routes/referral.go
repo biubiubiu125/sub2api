@@ -1,8 +1,6 @@
 package routes
 
 import (
-	"time"
-
 	"github.com/Wei-Shaw/sub2api/internal/handler"
 	ratelimit "github.com/Wei-Shaw/sub2api/internal/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -26,10 +24,11 @@ func RegisterReferralRoutes(
 	}
 
 	rateLimiter := ratelimit.NewRateLimiter(redisClient)
+	if h != nil && h.Referral != nil {
+		h.Referral.SetLandingRateLimit(rateLimiter, settingService)
+	}
 	r.GET("/referral-assets/*path", h.Referral.ServeAsset)
-	r.GET("/r/:code", rateLimiter.LimitWithOptions("custom-referral-landing", 60, time.Minute, ratelimit.RateLimitOptions{
-		FailureMode: ratelimit.RateLimitFailClose,
-	}), h.Referral.CaptureReferral)
+	r.GET("/r/:code", h.Referral.CaptureReferral)
 
 	authenticated := v1.Group("")
 	authenticated.Use(gin.HandlerFunc(jwtAuth))

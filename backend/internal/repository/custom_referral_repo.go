@@ -24,6 +24,182 @@ const (
 
 var customInviteCodeCharset = []byte("ABCDEFGHJKLMNPQRSTUVWXYZ23456789")
 
+func loadTableColumns(ctx context.Context, exec sqlQueryExecutor, table string) (map[string]struct{}, error) {
+	rows, err := exec.QueryContext(ctx, fmt.Sprintf("SELECT * FROM %s LIMIT 0", table))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	names, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+	columns := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		columns[strings.TrimSpace(name)] = struct{}{}
+	}
+	return columns, nil
+}
+
+func hasTableColumn(columns map[string]struct{}, name string) bool {
+	_, ok := columns[strings.TrimSpace(name)]
+	return ok
+}
+
+func customReferralCommissionOrderFilter(columns map[string]struct{}, alias, placeholder string) string {
+	prefix := ""
+	if alias = strings.TrimSpace(alias); alias != "" {
+		prefix = alias + "."
+	}
+	placeholder = strings.TrimSpace(placeholder)
+	if placeholder == "" {
+		placeholder = "$1"
+	}
+	hasOrderID := hasTableColumn(columns, "order_id")
+	hasSourceOrderID := hasTableColumn(columns, "source_order_id")
+	switch {
+	case hasOrderID && hasSourceOrderID:
+		return fmt.Sprintf("(%sorder_id = %s OR %ssource_order_id = %s)", prefix, placeholder, prefix, placeholder)
+	case hasSourceOrderID:
+		return fmt.Sprintf("%ssource_order_id = %s", prefix, placeholder)
+	default:
+		return fmt.Sprintf("%sorder_id = %s", prefix, placeholder)
+	}
+}
+
+func customReferralCommissionOrderSelectExpr(columns map[string]struct{}, alias string) string {
+	prefix := ""
+	if alias = strings.TrimSpace(alias); alias != "" {
+		prefix = alias + "."
+	}
+	hasOrderID := hasTableColumn(columns, "order_id")
+	hasSourceOrderID := hasTableColumn(columns, "source_order_id")
+	switch {
+	case hasOrderID && hasSourceOrderID:
+		return fmt.Sprintf("COALESCE(%sorder_id, %ssource_order_id)", prefix, prefix)
+	case hasSourceOrderID:
+		return fmt.Sprintf("%ssource_order_id", prefix)
+	default:
+		return fmt.Sprintf("%sorder_id", prefix)
+	}
+}
+
+type customCommissionLedgerInsert struct {
+	UserID              int64
+	AffiliateID         int64
+	CommissionID        int64
+	RelatedCommissionID int64
+	WithdrawalID        int64
+	Type                string
+	BizType             string
+	RefType             string
+	RefID               string
+	ExternalRefID       string
+	DeltaPending        float64
+	DeltaAvailable      float64
+	DeltaFrozen         float64
+	DeltaWithdrawn      float64
+	DeltaReversed       float64
+	DeltaDebt           float64
+	Remark              string
+	Operator            string
+	OperatorType        string
+	OperatorID          int64
+}
+
+func normalizeLedgerOperatorType(operatorType, operator string) string {
+	if operatorType = strings.TrimSpace(operatorType); operatorType != "" {
+		return operatorType
+	}
+	operator = strings.TrimSpace(operator)
+	switch {
+	case strings.HasPrefix(operator, "admin"):
+		return "admin"
+	case strings.HasPrefix(operator, "user"):
+		return "user"
+	default:
+		return "system"
+	}
+}
+
+func (r *customReferralRepository) insertCommissionLedger(ctx context.Context, exec sqlQueryExecutor, entry customCommissionLedgerInsert) error {
+	columns, err := loadTableColumns(ctx, exec, "custom_commission_ledger")
+	if err != nil {
+		return err
+	}
+	insertColumns := make([]string, 0, 18)
+	insertValues := make([]string, 0, 18)
+	insertArgs := make([]any, 0, 18)
+	appendInsert := func(column string, value any) {
+		if !hasTableColumn(columns, column) {
+			return
+		}
+		insertColumns = append(insertColumns, column)
+		insertArgs = append(insertArgs, value)
+		insertValues = append(insertValues, fmt.Sprintf("$%d", len(insertArgs)))
+	}
+	if hasTableColumn(columns, "user_id") {
+		if entry.UserID <= 0 {
+			return fmt.Errorf("missing ledger user id for ledger type %s", strings.TrimSpace(entry.Type))
+		}
+		appendInsert("user_id", entry.UserID)
+	}
+	if entry.AffiliateID > 0 {
+		appendInsert("affiliate_id", entry.AffiliateID)
+	}
+	if entry.CommissionID > 0 {
+		appendInsert("commission_id", entry.CommissionID)
+	}
+	switch {
+	case entry.RelatedCommissionID > 0:
+		appendInsert("related_commission_id", entry.RelatedCommissionID)
+	case entry.CommissionID > 0:
+		appendInsert("related_commission_id", entry.CommissionID)
+	}
+	if entry.WithdrawalID > 0 {
+		appendInsert("withdrawal_id", entry.WithdrawalID)
+	}
+	appendInsert("biz_type", firstNonEmpty(strings.TrimSpace(entry.BizType), strings.TrimSpace(entry.Type)))
+	appendInsert("type", strings.TrimSpace(entry.Type))
+	appendInsert("ref_type", strings.TrimSpace(entry.RefType))
+	appendInsert("ref_id", strings.TrimSpace(entry.RefID))
+	appendInsert("external_ref_id", strings.TrimSpace(entry.ExternalRefID))
+	appendInsert("delta_pending", entry.DeltaPending)
+	appendInsert("delta_available", entry.DeltaAvailable)
+	appendInsert("delta_frozen", entry.DeltaFrozen)
+	appendInsert("delta_withdrawn", entry.DeltaWithdrawn)
+	appendInsert("delta_reversed", entry.DeltaReversed)
+	appendInsert("delta_debt", entry.DeltaDebt)
+	appendInsert("remark", strings.TrimSpace(entry.Remark))
+	appendInsert("operator", firstNonEmpty(strings.TrimSpace(entry.Operator), "system"))
+	appendInsert("operator_type", normalizeLedgerOperatorType(entry.OperatorType, entry.Operator))
+	appendInsert("operator_id", nilIfZeroInt64(entry.OperatorID))
+
+	_, err = exec.ExecContext(ctx, fmt.Sprintf(`
+INSERT INTO custom_commission_ledger (
+    %s, created_at
+)
+VALUES (%s, NOW())`, strings.Join(insertColumns, ", "), strings.Join(insertValues, ", ")), insertArgs...)
+	return err
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func nilIfZeroInt64(value int64) any {
+	if value == 0 {
+		return nil
+	}
+	return value
+}
+
 type customReferralRepository struct {
 	client *dbent.Client
 	sql    *sql.DB
@@ -886,34 +1062,53 @@ FOR UPDATE`, order.AffiliateID, service.CustomAffiliateStatusApproved, service.S
 		}
 		settleAt = settleAt.Add(time.Duration(freezeDays) * 24 * time.Hour)
 
-		insertRows, err := exec.QueryContext(txCtx, `
+		commissionColumns, err := loadTableColumns(txCtx, exec, "custom_referral_commissions")
+		if err != nil {
+			return err
+		}
+		insertColumns := make([]string, 0, 11)
+		insertValues := make([]string, 0, 11)
+		insertArgs := make([]any, 0, 11)
+		appendInsert := func(column string, value any) {
+			insertColumns = append(insertColumns, column)
+			insertArgs = append(insertArgs, value)
+			insertValues = append(insertValues, fmt.Sprintf("$%d", len(insertArgs)))
+		}
+		appendInsert("affiliate_id", affiliateID)
+		if hasTableColumn(commissionColumns, "inviter_user_id") {
+			appendInsert("inviter_user_id", inviterUserID)
+		}
+		appendInsert("invitee_user_id", order.UserID)
+		if hasTableColumn(commissionColumns, "source_order_id") {
+			appendInsert("source_order_id", order.OrderID)
+		}
+		if hasTableColumn(commissionColumns, "order_id") {
+			appendInsert("order_id", order.OrderID)
+		}
+		appendInsert("order_type", strings.TrimSpace(order.OrderType))
+		appendInsert("base_amount", baseAmountDec.StringFixed(moneyx.ScaleCommission))
+		appendInsert("rate", rateDec.StringFixed(moneyx.ScaleRate))
+		appendInsert("commission_amount", amountDec.StringFixed(moneyx.ScaleCommission))
+		appendInsert("refunded_amount", 0)
+		appendInsert("status", service.CustomReferralCommissionStatusPending)
+		appendInsert("settle_at", settleAt)
+
+		insertRows, err := exec.QueryContext(txCtx, fmt.Sprintf(`
 INSERT INTO custom_referral_commissions (
-    affiliate_id, invitee_user_id, order_id, order_type,
-    base_amount, rate, commission_amount, refunded_amount, status,
-    settle_at, created_at, updated_at
+    %s, created_at, updated_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, 0, $8, $9, NOW(), NOW())
-ON CONFLICT (order_id) DO NOTHING
-RETURNING id`,
-			affiliateID,
-			order.UserID,
-			order.OrderID,
-			strings.TrimSpace(order.OrderType),
-			baseAmountDec.StringFixed(moneyx.ScaleCommission),
-			rateDec.StringFixed(moneyx.ScaleRate),
-			amountDec.StringFixed(moneyx.ScaleCommission),
-			service.CustomReferralCommissionStatusPending,
-			settleAt,
-		)
+VALUES (%s, NOW(), NOW())
+ON CONFLICT DO NOTHING
+RETURNING id`, strings.Join(insertColumns, ", "), strings.Join(insertValues, ", ")), insertArgs...)
 		if err != nil {
 			return err
 		}
 		if !insertRows.Next() {
 			_ = insertRows.Close()
-			existingRows, err := exec.QueryContext(txCtx, `
+			existingRows, err := exec.QueryContext(txCtx, fmt.Sprintf(`
 SELECT commission_amount::double precision
 FROM custom_referral_commissions
-WHERE order_id = $1`, order.OrderID)
+WHERE %s`, customReferralCommissionOrderFilter(commissionColumns, "", "$1")), order.OrderID)
 			if err != nil {
 				return err
 			}
@@ -962,18 +1157,18 @@ SET pending_amount = pending_amount + $2,
 WHERE affiliate_id = $1`, affiliateID, amountDec.StringFixed(moneyx.ScaleCommission)); err != nil {
 			return err
 		}
-		if _, err := exec.ExecContext(txCtx, `
-INSERT INTO custom_commission_ledger (
-    affiliate_id, commission_id, type, ref_type, ref_id, external_ref_id,
-    delta_pending, remark, operator, created_at
-) VALUES ($1, $2, 'commission_accrue', 'order', $3, $4, $5, $6, 'system', NOW())`,
-			affiliateID,
-			commissionID,
-			fmt.Sprintf("%d", order.OrderID),
-			fmt.Sprintf("order:%d", order.OrderID),
-			amountDec.StringFixed(moneyx.ScaleCommission),
-			fmt.Sprintf("order_type=%s inviter_user_id=%d", strings.TrimSpace(order.OrderType), inviterUserID),
-		); err != nil {
+		if err := r.insertCommissionLedger(txCtx, exec, customCommissionLedgerInsert{
+			UserID:        inviterUserID,
+			AffiliateID:   affiliateID,
+			CommissionID:  commissionID,
+			Type:          "commission_accrue",
+			RefType:       "order",
+			RefID:         fmt.Sprintf("%d", order.OrderID),
+			ExternalRefID: fmt.Sprintf("order:%d", order.OrderID),
+			DeltaPending:  amountDec.InexactFloat64(),
+			Remark:        fmt.Sprintf("order_type=%s inviter_user_id=%d", strings.TrimSpace(order.OrderType), inviterUserID),
+			Operator:      "system",
+		}); err != nil {
 			return err
 		}
 
@@ -989,16 +1184,22 @@ INSERT INTO custom_commission_ledger (
 func (r *customReferralRepository) ReverseCommissionForRefund(ctx context.Context, refund service.CustomReferralRefundInput) (float64, error) {
 	var reversed float64
 	err := r.withTx(ctx, func(txCtx context.Context, exec sqlQueryExecutor) error {
-		rows, err := exec.QueryContext(txCtx, `
-SELECT id,
-       affiliate_id,
-       base_amount::double precision,
-       commission_amount::double precision,
-       refunded_amount::double precision,
-       status
-FROM custom_referral_commissions
-WHERE order_id = $1
-FOR UPDATE`, refund.OrderID)
+		commissionColumns, err := loadTableColumns(txCtx, exec, "custom_referral_commissions")
+		if err != nil {
+			return err
+		}
+		rows, err := exec.QueryContext(txCtx, fmt.Sprintf(`
+SELECT c.id,
+       c.affiliate_id,
+       a.user_id,
+       c.base_amount::double precision,
+       c.commission_amount::double precision,
+       c.refunded_amount::double precision,
+       c.status
+FROM custom_referral_commissions c
+JOIN custom_affiliates a ON a.id = c.affiliate_id
+WHERE %s
+FOR UPDATE OF c`, customReferralCommissionOrderFilter(commissionColumns, "c", "$1")), refund.OrderID)
 		if err != nil {
 			return err
 		}
@@ -1008,11 +1209,12 @@ FOR UPDATE`, refund.OrderID)
 		}
 		var commissionID int64
 		var affiliateID int64
+		var affiliateUserID int64
 		var baseAmount float64
 		var commissionAmount float64
 		var refundedAmount float64
 		var status string
-		if err := rows.Scan(&commissionID, &affiliateID, &baseAmount, &commissionAmount, &refundedAmount, &status); err != nil {
+		if err := rows.Scan(&commissionID, &affiliateID, &affiliateUserID, &baseAmount, &commissionAmount, &refundedAmount, &status); err != nil {
 			_ = rows.Close()
 			return err
 		}
@@ -1188,21 +1390,21 @@ WHERE affiliate_id = $1
 			return service.ErrCustomReferralWithdrawInsufficient
 		}
 
-		if _, err := exec.ExecContext(txCtx, `
-INSERT INTO custom_commission_ledger (
-    affiliate_id, commission_id, type, ref_type, ref_id, external_ref_id,
-    delta_pending, delta_available, delta_reversed, delta_debt, remark, operator, created_at
-) VALUES ($1, $2, 'commission_reverse', 'refund', $3, $4, $5, $6, $7, $8, $9, 'system', NOW())`,
-			affiliateID,
-			commissionID,
-			fmt.Sprintf("%d", refund.OrderID),
-			fmt.Sprintf("refund:%d:%s", refund.OrderID, nextRefundedDec.StringFixed(moneyx.ScaleCommission)),
-			pendingDecreaseDec.Neg().InexactFloat64(),
-			availableDecreaseDec.Neg().InexactFloat64(),
-			reverseAmount,
-			debtIncreaseDec.InexactFloat64(),
-			strings.TrimSpace(refund.Reason),
-		); err != nil {
+		if err := r.insertCommissionLedger(txCtx, exec, customCommissionLedgerInsert{
+			UserID:         affiliateUserID,
+			AffiliateID:    affiliateID,
+			CommissionID:   commissionID,
+			Type:           "commission_reverse",
+			RefType:        "refund",
+			RefID:          fmt.Sprintf("%d", refund.OrderID),
+			ExternalRefID:  fmt.Sprintf("refund:%d:%s", refund.OrderID, nextRefundedDec.StringFixed(moneyx.ScaleCommission)),
+			DeltaPending:   pendingDecreaseDec.Neg().InexactFloat64(),
+			DeltaAvailable: availableDecreaseDec.Neg().InexactFloat64(),
+			DeltaReversed:  reverseAmount,
+			DeltaDebt:      debtIncreaseDec.InexactFloat64(),
+			Remark:         strings.TrimSpace(refund.Reason),
+			Operator:       "system",
+		}); err != nil {
 			return err
 		}
 
@@ -1227,6 +1429,10 @@ func (r *customReferralRepository) ReverseCommissionManually(ctx context.Context
 			out = existing
 			return nil
 		}
+		commissionColumns, err := loadTableColumns(txCtx, exec, "custom_referral_commissions")
+		if err != nil {
+			return err
+		}
 
 		type lockedCommission struct {
 			id               int64
@@ -1238,11 +1444,11 @@ func (r *customReferralRepository) ReverseCommissionManually(ctx context.Context
 			refundedAmount   float64
 			status           string
 		}
-		rows, err := exec.QueryContext(txCtx, `
+		rows, err := exec.QueryContext(txCtx, fmt.Sprintf(`
 SELECT c.id,
        c.affiliate_id,
        a.user_id,
-       c.order_id,
+       %s,
        c.base_amount::double precision,
        c.commission_amount::double precision,
        c.refunded_amount::double precision,
@@ -1250,8 +1456,8 @@ SELECT c.id,
 FROM custom_referral_commissions c
 JOIN custom_affiliates a ON a.id = c.affiliate_id
 WHERE (($1::bigint > 0 AND c.id = $1)
-   OR ($1::bigint <= 0 AND c.order_id = $2))
-FOR UPDATE OF c`, input.CommissionID, input.OrderID)
+   OR ($1::bigint <= 0 AND %s))
+FOR UPDATE OF c`, customReferralCommissionOrderSelectExpr(commissionColumns, "c"), customReferralCommissionOrderFilter(commissionColumns, "c", "$2")), input.CommissionID, input.OrderID)
 		if err != nil {
 			return err
 		}
@@ -1490,24 +1696,25 @@ WHERE affiliate_id = $1
 				return service.ErrCustomReferralWithdrawInsufficient
 			}
 
-			if _, err := exec.ExecContext(txCtx, `
-INSERT INTO custom_commission_ledger (
-    affiliate_id, commission_id, type, ref_type, ref_id, external_ref_id,
-    delta_pending, delta_available, delta_frozen, delta_reversed, delta_debt,
-    remark, operator, created_at
-) VALUES ($1, $2, 'commission_reverse', 'manual_refund', $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())`,
-				commission.affiliateID,
-				commission.id,
-				fmt.Sprintf("%d", commission.orderID),
-				input.IdempotencyKey,
-				pendingDecreaseDec.Neg().InexactFloat64(),
-				availableDecreaseDec.Neg().InexactFloat64(),
-				frozenDecreaseDec.Neg().InexactFloat64(),
-				reverseAmountDec.InexactFloat64(),
-				debtIncreaseDec.InexactFloat64(),
-				fmt.Sprintf("reason=%s refund_amount=%s reverse_amount=%s", strings.TrimSpace(input.Reason), refundAmountDec.StringFixed(8), reverseAmountDec.StringFixed(8)),
-				fmt.Sprintf("admin:%d", input.AdminUserID),
-			); err != nil {
+			if err := r.insertCommissionLedger(txCtx, exec, customCommissionLedgerInsert{
+				UserID:              commission.affiliateUserID,
+				AffiliateID:         commission.affiliateID,
+				CommissionID:        commission.id,
+				RelatedCommissionID: commission.id,
+				Type:                "commission_reverse",
+				RefType:             "manual_refund",
+				RefID:               fmt.Sprintf("%d", commission.orderID),
+				ExternalRefID:       input.IdempotencyKey,
+				DeltaPending:        pendingDecreaseDec.Neg().InexactFloat64(),
+				DeltaAvailable:      availableDecreaseDec.Neg().InexactFloat64(),
+				DeltaFrozen:         frozenDecreaseDec.Neg().InexactFloat64(),
+				DeltaReversed:       reverseAmountDec.InexactFloat64(),
+				DeltaDebt:           debtIncreaseDec.InexactFloat64(),
+				Remark:              fmt.Sprintf("reason=%s refund_amount=%s reverse_amount=%s", strings.TrimSpace(input.Reason), refundAmountDec.StringFixed(8), reverseAmountDec.StringFixed(8)),
+				Operator:            fmt.Sprintf("admin:%d", input.AdminUserID),
+				OperatorType:        "admin",
+				OperatorID:          input.AdminUserID,
+			}); err != nil {
 				return err
 			}
 		}
@@ -2432,6 +2639,7 @@ func (r *customReferralRepository) settleDueCommissions(ctx context.Context, exe
 	rows, err := exec.QueryContext(ctx, `
 SELECT c.id,
        c.affiliate_id,
+       a.user_id,
        c.commission_amount::double precision,
        c.refunded_amount::double precision
 FROM custom_referral_commissions c
@@ -2451,13 +2659,14 @@ FOR UPDATE`, service.CustomReferralCommissionStatusPending, now, service.CustomA
 	type dueCommission struct {
 		commissionID     int64
 		affiliateID      int64
+		affiliateUserID  int64
 		commissionAmount float64
 		refundedAmount   float64
 	}
 	dueItems := make([]dueCommission, 0)
 	for rows.Next() {
 		var item dueCommission
-		if err := rows.Scan(&item.commissionID, &item.affiliateID, &item.commissionAmount, &item.refundedAmount); err != nil {
+		if err := rows.Scan(&item.commissionID, &item.affiliateID, &item.affiliateUserID, &item.commissionAmount, &item.refundedAmount); err != nil {
 			_ = rows.Close()
 			return err
 		}
@@ -2564,19 +2773,19 @@ WHERE affiliate_id = $1
 		if affected == 0 {
 			return service.ErrCustomReferralWithdrawInsufficient
 		}
-		if _, err := exec.ExecContext(ctx, `
-INSERT INTO custom_commission_ledger (
-    affiliate_id, commission_id, type, ref_type, ref_id, external_ref_id,
-    delta_pending, delta_available, delta_debt, remark, operator, created_at
-) VALUES ($1, $2, 'commission_settle', 'commission', $3, $4, $5, $6, $7, '', 'system', NOW())`,
-			item.affiliateID,
-			item.commissionID,
-			fmt.Sprintf("%d", item.commissionID),
-			fmt.Sprintf("settle:%d", item.commissionID),
-			-amount,
-			availableIncreaseDec.InexactFloat64(),
-			debtRepaidDec.Neg().InexactFloat64(),
-		); err != nil {
+		if err := r.insertCommissionLedger(ctx, exec, customCommissionLedgerInsert{
+			UserID:         item.affiliateUserID,
+			AffiliateID:    item.affiliateID,
+			CommissionID:   item.commissionID,
+			Type:           "commission_settle",
+			RefType:        "commission",
+			RefID:          fmt.Sprintf("%d", item.commissionID),
+			ExternalRefID:  fmt.Sprintf("settle:%d", item.commissionID),
+			DeltaPending:   -amount,
+			DeltaAvailable: availableIncreaseDec.InexactFloat64(),
+			DeltaDebt:      debtRepaidDec.Neg().InexactFloat64(),
+			Operator:       "system",
+		}); err != nil {
 			return err
 		}
 		if result != nil {
@@ -2718,28 +2927,46 @@ FOR UPDATE`, affiliate.ID, service.CustomReferralCommissionStatusAvailable)
 		netAmount := netAmountDec.InexactFloat64()
 
 		now := time.Now()
-		withdrawRows, err := exec.QueryContext(txCtx, `
+		withdrawalColumns, err := loadTableColumns(txCtx, exec, "custom_commission_withdrawals")
+		if err != nil {
+			return err
+		}
+		insertColumns := make([]string, 0, 16)
+		insertValues := make([]string, 0, 16)
+		insertArgs := make([]any, 0, 16)
+		appendInsert := func(column string, value any) {
+			if !hasTableColumn(withdrawalColumns, column) {
+				return
+			}
+			insertColumns = append(insertColumns, column)
+			insertArgs = append(insertArgs, value)
+			insertValues = append(insertValues, fmt.Sprintf("$%d", len(insertArgs)))
+		}
+		appendInsert("user_id", affiliate.UserID)
+		appendInsert("affiliate_id", affiliate.ID)
+		appendInsert("amount", requestAmountDec.InexactFloat64())
+		appendInsert("fee_amount", feeAmount)
+		appendInsert("net_amount", netAmount)
+		appendInsert("channel", strings.TrimSpace(input.AccountType))
+		appendInsert("account_type", strings.TrimSpace(input.AccountType))
+		appendInsert("account_name", strings.TrimSpace(input.AccountName))
+		appendInsert("real_name", strings.TrimSpace(input.AccountName))
+		appendInsert("account_no", strings.TrimSpace(input.AccountNo))
+		appendInsert("account_network", strings.TrimSpace(input.AccountNetwork))
+		appendInsert("qr_image_url", strings.TrimSpace(input.QRImageURL))
+		appendInsert("contact_info", strings.TrimSpace(input.ContactInfo))
+		appendInsert("applicant_note", strings.TrimSpace(input.ApplicantNote))
+		appendInsert("idempotency_key", strings.TrimSpace(input.IdempotencyKey))
+		appendInsert("status", service.CustomReferralWithdrawalStatusPending)
+		appendInsert("requested_at", now)
+		appendInsert("submitted_at", now)
+
+		withdrawRows, err := exec.QueryContext(txCtx, fmt.Sprintf(`
 INSERT INTO custom_commission_withdrawals (
-    affiliate_id, amount, fee_amount, net_amount, account_type, account_name, account_no, account_network,
-    qr_image_url, contact_info, applicant_note, idempotency_key, status, submitted_at, created_at, updated_at
+    %s, created_at, updated_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
-RETURNING id`,
-			affiliate.ID,
-			requestAmountDec.InexactFloat64(),
-			feeAmount,
-			netAmount,
-			strings.TrimSpace(input.AccountType),
-			strings.TrimSpace(input.AccountName),
-			strings.TrimSpace(input.AccountNo),
-			strings.TrimSpace(input.AccountNetwork),
-			strings.TrimSpace(input.QRImageURL),
-			strings.TrimSpace(input.ContactInfo),
-			strings.TrimSpace(input.ApplicantNote),
-			strings.TrimSpace(input.IdempotencyKey),
-			service.CustomReferralWithdrawalStatusPending,
-			now,
-		)
+VALUES (%s, NOW(), NOW())
+RETURNING id`, strings.Join(insertColumns, ", "), strings.Join(insertValues, ", ")), insertArgs...)
 		if err != nil {
 			return err
 		}
@@ -2777,19 +3004,21 @@ SET available_amount = available_amount - $2,
 WHERE affiliate_id = $1`, affiliate.ID, requestAmountDec.InexactFloat64()); err != nil {
 			return err
 		}
-		if _, err := exec.ExecContext(txCtx, `
-INSERT INTO custom_commission_ledger (
-    affiliate_id, withdrawal_id, type, ref_type, ref_id, external_ref_id,
-    delta_available, delta_frozen, remark, operator, created_at
-) VALUES ($1, $2, 'withdrawal_apply', 'withdrawal', $3, $4, $5, $6, $7, 'user', NOW())`,
-			affiliate.ID,
-			withdrawalID,
-			fmt.Sprintf("%d", withdrawalID),
-			fmt.Sprintf("withdrawal:%d", withdrawalID),
-			requestAmountDec.Neg().InexactFloat64(),
-			requestAmountDec.InexactFloat64(),
-			strings.TrimSpace(input.ApplicantNote),
-		); err != nil {
+		if err := r.insertCommissionLedger(txCtx, exec, customCommissionLedgerInsert{
+			UserID:         affiliate.UserID,
+			AffiliateID:    affiliate.ID,
+			WithdrawalID:   withdrawalID,
+			Type:           "withdrawal_apply",
+			RefType:        "withdrawal",
+			RefID:          fmt.Sprintf("%d", withdrawalID),
+			ExternalRefID:  fmt.Sprintf("withdrawal:%d", withdrawalID),
+			DeltaAvailable: requestAmountDec.Neg().InexactFloat64(),
+			DeltaFrozen:    requestAmountDec.InexactFloat64(),
+			Remark:         strings.TrimSpace(input.ApplicantNote),
+			Operator:       "user",
+			OperatorType:   "user",
+			OperatorID:     affiliate.UserID,
+		}); err != nil {
 			return err
 		}
 
@@ -3016,6 +3245,23 @@ RETURNING affiliate_id, amount::double precision`,
 		if err := rows.Close(); err != nil {
 			return err
 		}
+		affiliateRows, err := exec.QueryContext(txCtx, `
+SELECT user_id
+FROM custom_affiliates
+WHERE id = $1`, affiliateID)
+		if err != nil {
+			return err
+		}
+		affiliateUserID := int64(0)
+		if affiliateRows.Next() {
+			if err := affiliateRows.Scan(&affiliateUserID); err != nil {
+				_ = affiliateRows.Close()
+				return err
+			}
+		}
+		if err := affiliateRows.Close(); err != nil {
+			return err
+		}
 		debtRows, err := exec.QueryContext(txCtx, `
 SELECT debt_amount::double precision
 FROM custom_commission_accounts
@@ -3062,19 +3308,21 @@ WHERE withdrawal_id = $1
 		); err != nil {
 			return err
 		}
-		if _, err := exec.ExecContext(txCtx, `
-INSERT INTO custom_commission_ledger (
-    affiliate_id, withdrawal_id, type, ref_type, ref_id, external_ref_id,
-    delta_frozen, delta_withdrawn, remark, operator, created_at
-) VALUES ($1, $2, 'withdrawal_paid', 'withdrawal', $3, $4, $5, $6, $7, 'admin', NOW())`,
-			affiliateID,
-			input.WithdrawalID,
-			fmt.Sprintf("%d", input.WithdrawalID),
-			fmt.Sprintf("withdrawal:%d", input.WithdrawalID),
-			-amount,
-			amount,
-			strings.TrimSpace(input.AdminNote),
-		); err != nil {
+		if err := r.insertCommissionLedger(txCtx, exec, customCommissionLedgerInsert{
+			UserID:         affiliateUserID,
+			AffiliateID:    affiliateID,
+			WithdrawalID:   input.WithdrawalID,
+			Type:           "withdrawal_paid",
+			RefType:        "withdrawal",
+			RefID:          fmt.Sprintf("%d", input.WithdrawalID),
+			ExternalRefID:  fmt.Sprintf("withdrawal:%d", input.WithdrawalID),
+			DeltaFrozen:    -amount,
+			DeltaWithdrawn: amount,
+			Remark:         strings.TrimSpace(input.AdminNote),
+			Operator:       "admin",
+			OperatorType:   "admin",
+			OperatorID:     input.AdminUserID,
+		}); err != nil {
 			return err
 		}
 		out, err = r.getWithdrawalByID(txCtx, exec, input.WithdrawalID)
@@ -3149,7 +3397,7 @@ SET status = $2,
 FROM custom_affiliates a
 WHERE w.id = $1
   AND w.affiliate_id = a.id
-  AND w.status IN ($7, $8)
+  AND w.status = $7
 RETURNING w.id, w.affiliate_id, a.user_id, w.amount::double precision`,
 				withdrawalID,
 				targetStatus,
@@ -3158,7 +3406,6 @@ RETURNING w.id, w.affiliate_id, a.user_id, w.amount::double precision`,
 				strings.TrimSpace(reason),
 				strings.TrimSpace(adminNote),
 				service.CustomReferralWithdrawalStatusPending,
-				service.CustomReferralWithdrawalStatusApproved,
 			)
 			if err != nil {
 				return err
@@ -3231,22 +3478,22 @@ WHERE withdrawal_id = $1
 		if targetStatus == service.CustomReferralWithdrawalStatusRejected {
 			ledgerType = "withdrawal_reject"
 		}
-		if _, err := exec.ExecContext(txCtx, `
-INSERT INTO custom_commission_ledger (
-    affiliate_id, withdrawal_id, type, ref_type, ref_id, external_ref_id,
-    delta_available, delta_frozen, delta_debt, remark, operator, created_at
-) VALUES ($1, $2, $3, 'withdrawal', $4, $5, $6, $7, $8, $9, $10, NOW())`,
-			item.affiliateID,
-			item.id,
-			ledgerType,
-			fmt.Sprintf("%d", item.id),
-			fmt.Sprintf("withdrawal:%d", item.id),
-			availableReturnedDec.InexactFloat64(),
-			itemAmountDec.Neg().InexactFloat64(),
-			debtRepaidDec.Neg().InexactFloat64(),
-			strings.TrimSpace(reason),
-			operator,
-		); err != nil {
+		if err := r.insertCommissionLedger(txCtx, exec, customCommissionLedgerInsert{
+			UserID:         item.affiliateUserID,
+			AffiliateID:    item.affiliateID,
+			WithdrawalID:   item.id,
+			Type:           ledgerType,
+			RefType:        "withdrawal",
+			RefID:          fmt.Sprintf("%d", item.id),
+			ExternalRefID:  fmt.Sprintf("withdrawal:%d", item.id),
+			DeltaAvailable: availableReturnedDec.InexactFloat64(),
+			DeltaFrozen:    itemAmountDec.Neg().InexactFloat64(),
+			DeltaDebt:      debtRepaidDec.Neg().InexactFloat64(),
+			Remark:         strings.TrimSpace(reason),
+			Operator:       operator,
+			OperatorType:   operator,
+			OperatorID:     actorUserID,
+		}); err != nil {
 			return err
 		}
 		out, err = r.getWithdrawalByID(txCtx, exec, withdrawalID)

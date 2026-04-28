@@ -924,6 +924,22 @@ rate_limit:
   # 上游返回 529（过载）时的冷却时间（分钟）
   overload_cooldown_minutes: 10
 
+  # Register rate limiting
+  # 注册限流
+  register:
+    enabled: true
+    per_ip_per_minute: 5
+    per_email_per_minute: 0
+    per_email_domain_per_minute: 0
+    per_invite_code_per_minute: 0
+
+  # Referral landing rate limiting
+  # 推广落地页限流
+  referral_landing:
+    enabled: true
+    per_ip_per_minute: 60
+    per_invite_code_per_minute: 0
+
 # =============================================================================
 # Pricing Data Source (Optional)
 # 定价数据源（可选）

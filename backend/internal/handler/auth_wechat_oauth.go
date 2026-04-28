@@ -548,7 +548,8 @@ func (h *AuthHandler) CompleteWeChatOAuthRegistration(c *gin.Context) {
 		return
 	}
 
-	loginCtx := service.ContextWithAffiliateCode(c.Request.Context(), h.resolveAffiliateCode(c, req.AffCode))
+	affiliateCode, affiliateSource := h.resolveAffiliateAttribution(c, req.AffCode)
+	loginCtx := service.ContextWithAffiliateAttribution(c.Request.Context(), affiliateCode, affiliateSource)
 	tokenPair, user, err := h.authService.LoginOrRegisterOAuthWithTokenPair(loginCtx, email, username, req.InvitationCode)
 	if err != nil {
 		response.ErrorFrom(c, err)

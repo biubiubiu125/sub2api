@@ -80,43 +80,42 @@ func (r *RateLimiter) Limit(key string, limit int, window time.Duration) gin.Han
 	return r.LimitWithOptions(key, limit, window, RateLimitOptions{})
 }
 
-// LimitWithOptions 返回速率限制中间件（带可选配置）
-func (r *RateLimiter) LimitWithOptions(key string, limit int, window time.Duration, opts RateLimitOptions) gin.HandlerFunc {
+// CheckWithOptions executes a rate-limit check without coupling the caller to gin.
+// key should already contain any subject dimensions such as IP or invite code.
+func (r *RateLimiter) CheckWithOptions(ctx context.Context, key string, limit int, window time.Duration, opts RateLimitOptions) (bool, error) {
+	if limit <= 0 {
+		return false, nil
+	}
 	failureMode := opts.FailureMode
 	if failureMode != RateLimitFailClose {
 		failureMode = RateLimitFailOpen
 	}
 
+	redisKey := r.prefix + key
+	windowMillis := windowTTLMillis(window)
+	count, repaired, err := rateLimitRun(ctx, r.redis, redisKey, windowMillis)
+	if err != nil {
+		log.Printf("[RateLimit] redis error: key=%s mode=%s err=%v", redisKey, failureModeLabel(failureMode), err)
+		if failureMode == RateLimitFailClose {
+			return true, err
+		}
+		return false, nil
+	}
+	if repaired {
+		log.Printf("[RateLimit] ttl repaired: key=%s window_ms=%d", redisKey, windowMillis)
+	}
+	return count > int64(limit), nil
+}
+
+// LimitWithOptions 返回速率限制中间件（带可选配置）
+func (r *RateLimiter) LimitWithOptions(key string, limit int, window time.Duration, opts RateLimitOptions) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ip := c.ClientIP()
-		redisKey := r.prefix + key + ":" + ip
-
-		ctx := c.Request.Context()
-
-		windowMillis := windowTTLMillis(window)
-
-		// 使用 Lua 脚本原子操作增加计数并设置过期
-		count, repaired, err := rateLimitRun(ctx, r.redis, redisKey, windowMillis)
-		if err != nil {
-			log.Printf("[RateLimit] redis error: key=%s mode=%s err=%v", redisKey, failureModeLabel(failureMode), err)
-			if failureMode == RateLimitFailClose {
-				abortRateLimit(c)
-				return
-			}
-			// Redis 错误时放行，避免影响正常服务
-			c.Next()
-			return
-		}
-		if repaired {
-			log.Printf("[RateLimit] ttl repaired: key=%s window_ms=%d", redisKey, windowMillis)
-		}
-
-		// 超过限制
-		if count > int64(limit) {
+		blocked, _ := r.CheckWithOptions(c.Request.Context(), key+":"+ip, limit, window, opts)
+		if blocked {
 			abortRateLimit(c)
 			return
 		}
-
 		c.Next()
 	}
 }

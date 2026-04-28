@@ -6,7 +6,6 @@
     @close="emit('cancel')"
   >
     <form id="refund-form" @submit.prevent="handleSubmit" class="space-y-4">
-      <!-- Refund Request Info -->
       <div
         v-if="order?.refund_requested_at || order?.refund_request_reason"
         class="rounded-lg border border-violet-200 bg-violet-50 p-3 dark:border-violet-800 dark:bg-violet-900/20"
@@ -27,7 +26,6 @@
         </div>
       </div>
 
-      <!-- Order Info -->
       <div class="rounded-lg bg-gray-50 p-3 dark:bg-dark-700">
         <div class="flex justify-between text-sm">
           <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.orderId') }}</span>
@@ -35,19 +33,18 @@
         </div>
         <div class="mt-1 flex justify-between text-sm">
           <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.creditedAmount') }}</span>
-          <span class="font-medium text-gray-900 dark:text-white">{{ order?.order_type === 'balance' ? '$' : '¥' }}{{ order?.amount?.toFixed(2) }}</span>
+          <span class="font-medium text-gray-900 dark:text-white">{{ order?.order_type === 'balance' ? '$' : '楼' }}{{ order?.amount?.toFixed(2) }}</span>
         </div>
         <div class="mt-1 flex justify-between text-sm">
           <span class="text-gray-500 dark:text-gray-400">{{ t('payment.orders.payAmount') }}</span>
-          <span class="font-medium text-gray-900 dark:text-white">¥{{ order?.pay_amount?.toFixed(2) }}</span>
+          <span class="font-medium text-gray-900 dark:text-white">楼{{ order?.pay_amount?.toFixed(2) }}</span>
         </div>
         <div v-if="actuallyRefunded > 0" class="mt-1 flex justify-between text-sm">
           <span class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.alreadyRefunded') }}</span>
-          <span class="font-medium text-red-600 dark:text-red-400">{{ order?.order_type === 'balance' ? '$' : '¥' }}{{ actuallyRefunded.toFixed(2) }}</span>
+          <span class="font-medium text-red-600 dark:text-red-400">{{ order?.order_type === 'balance' ? '$' : '楼' }}{{ actuallyRefunded.toFixed(2) }}</span>
         </div>
       </div>
 
-      <!-- Deduct Balance -->
       <div>
         <div class="flex items-center gap-2">
           <input
@@ -62,19 +59,17 @@
           <span class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.admin.deductBalanceHint') }}</span>
         </div>
 
-        <!-- User Balance Info (when deduct_balance is checked) -->
         <div v-if="form.deduct_balance && userBalance != null" class="mt-3 grid grid-cols-2 gap-3">
           <div class="rounded-lg bg-gray-50 p-3 text-sm dark:bg-dark-700">
             <div class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.userBalance') }}</div>
             <div class="mt-1 font-semibold text-gray-900 dark:text-white">${{ userBalance.toFixed(2) }}</div>
           </div>
           <div class="rounded-lg bg-gray-50 p-3 text-sm dark:bg-dark-700">
-            <div class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.orderAmount') }}</div>
-            <div class="mt-1 font-semibold text-gray-900 dark:text-white">{{ order?.order_type === 'balance' ? '$' : '¥' }}{{ order?.amount?.toFixed(2) }}</div>
+            <div class="text-gray-500 dark:text-gray-400">{{ t('payment.admin.deductBalance') }}</div>
+            <div class="mt-1 font-semibold text-gray-900 dark:text-white">${{ balanceDeductionRequired.toFixed(2) }}</div>
           </div>
         </div>
 
-        <!-- Insufficient balance warning -->
         <div
           v-if="form.deduct_balance && balanceInsufficient"
           class="mt-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
@@ -82,7 +77,6 @@
           {{ t('payment.admin.insufficientBalance') }}
         </div>
 
-        <!-- No deduction info -->
         <div
           v-if="!form.deduct_balance"
           class="mt-2 rounded-lg bg-blue-50 p-3 text-sm text-blue-700 dark:bg-blue-900/20 dark:text-blue-300"
@@ -91,11 +85,10 @@
         </div>
       </div>
 
-      <!-- Refund Amount -->
       <div>
         <label class="input-label">{{ t('payment.admin.refundAmount') }}</label>
         <div class="relative">
-          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">{{ order?.order_type === 'balance' ? '$' : '¥' }}</span>
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">{{ order?.order_type === 'balance' ? '$' : '楼' }}</span>
           <input
             v-model.number="form.amount"
             type="number"
@@ -107,11 +100,10 @@
           />
         </div>
         <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-          {{ t('payment.admin.maxRefundable') }}: {{ order?.order_type === 'balance' ? '$' : '¥' }}{{ maxRefundable.toFixed(2) }}
+          {{ t('payment.admin.maxRefundable') }}: {{ order?.order_type === 'balance' ? '$' : '楼' }}{{ maxRefundable.toFixed(2) }}
         </p>
       </div>
 
-      <!-- Reason -->
       <div>
         <label class="input-label">{{ t('payment.admin.refundReason') }}</label>
         <textarea
@@ -123,7 +115,6 @@
         ></textarea>
       </div>
 
-      <!-- Warning -->
       <div
         v-if="warning"
         class="rounded-lg bg-yellow-50 p-3 text-sm text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-300"
@@ -131,7 +122,6 @@
         {{ warning }}
       </div>
 
-      <!-- Force Refund -->
       <div v-if="requireForce" class="flex items-center gap-2">
         <input
           id="force-refund"
@@ -193,8 +183,8 @@ const form = reactive({
   force: false,
 })
 
-// In REFUND_REQUESTED status, refund_amount is the REQUESTED amount, not actually refunded.
-// Only PARTIALLY_REFUNDED / REFUNDED have real refund amounts.
+// In REFUND_REQUESTED status, refund_amount is the requested cash refund amount.
+// Only PARTIALLY_REFUNDED / REFUNDED represent executed refunds.
 const actuallyRefunded = computed(() => {
   if (!props.order) return 0
   const s = props.order.status
@@ -204,17 +194,25 @@ const actuallyRefunded = computed(() => {
 
 const maxRefundable = computed(() => {
   if (!props.order) return 0
-  return props.order.amount - actuallyRefunded.value
+  return Math.max(0, (props.order.pay_amount || 0) - actuallyRefunded.value)
+})
+
+const balanceDeductionRequired = computed(() => {
+  if (!props.order) return 0
+  const creditedAmount = props.order.amount || 0
+  const paidAmount = props.order.pay_amount || 0
+  if (creditedAmount <= 0 || paidAmount <= 0 || form.amount <= 0) return 0
+  if (form.amount >= paidAmount) return creditedAmount
+  return Number(((creditedAmount * form.amount) / paidAmount).toFixed(2))
 })
 
 const balanceInsufficient = computed(() => {
   if (props.userBalance == null || !props.order) return false
-  return props.userBalance < props.order.amount
+  return props.userBalance < balanceDeductionRequired.value
 })
 
 watch(() => props.show, (val) => {
   if (val && props.order) {
-    // For REFUND_REQUESTED, pre-fill with the requested amount
     if (props.order.status === 'REFUND_REQUESTED' && props.order.refund_amount) {
       form.amount = props.order.refund_amount
     } else {

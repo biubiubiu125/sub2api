@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	ratelimit "github.com/Wei-Shaw/sub2api/internal/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -20,6 +21,8 @@ import (
 type ReferralHandler struct {
 	referralService *service.CustomReferralService
 	assetService    *service.ReferralAssetService
+	landingLimiter  *ratelimit.RateLimiter
+	settingService  *service.SettingService
 }
 
 type createReferralWithdrawalRequest struct {
@@ -45,9 +48,21 @@ func NewReferralHandler(referralService *service.CustomReferralService, assetSer
 	}
 }
 
+func (h *ReferralHandler) SetLandingRateLimit(rateLimiter *ratelimit.RateLimiter, settingService *service.SettingService) {
+	if h == nil {
+		return
+	}
+	h.landingLimiter = rateLimiter
+	h.settingService = settingService
+}
+
 func (h *ReferralHandler) CaptureReferral(c *gin.Context) {
 	if h == nil || h.referralService == nil {
 		c.Redirect(http.StatusFound, "/register")
+		return
+	}
+	if err := h.enforceLandingRateLimit(c, c.Param("code")); err != nil {
+		response.ErrorFrom(c, err)
 		return
 	}
 	landing, err := h.referralService.HandleLanding(
@@ -67,6 +82,42 @@ func (h *ReferralHandler) CaptureReferral(c *gin.Context) {
 		return
 	}
 	c.Redirect(http.StatusFound, referralRegisterErrorRedirect())
+}
+
+func (h *ReferralHandler) enforceLandingRateLimit(c *gin.Context, rawCode string) error {
+	if h == nil || h.landingLimiter == nil || c == nil {
+		return nil
+	}
+	settings := service.DefaultReferralLandingRateLimitSettings()
+	if h.settingService != nil {
+		settings = h.settingService.GetReferralLandingRateLimitSettings(c.Request.Context())
+	}
+	if !settings.Enabled {
+		return nil
+	}
+
+	if blocked, err := h.landingLimiter.CheckWithOptions(
+		c.Request.Context(),
+		"custom-referral-landing:ip:"+strings.TrimSpace(c.ClientIP()),
+		settings.PerIPPerMinute,
+		time.Minute,
+		ratelimit.RateLimitOptions{FailureMode: ratelimit.RateLimitFailClose},
+	); blocked {
+		return registerRateLimitError("landing_ip", err)
+	}
+
+	code := strings.ToUpper(strings.TrimSpace(rawCode))
+	if blocked, err := h.landingLimiter.CheckWithOptions(
+		c.Request.Context(),
+		"custom-referral-landing:invite-code:"+code,
+		settings.PerInviteCodePerMinute,
+		time.Minute,
+		ratelimit.RateLimitOptions{FailureMode: ratelimit.RateLimitFailClose},
+	); blocked {
+		return registerRateLimitError("landing_invite_code", err)
+	}
+
+	return nil
 }
 
 func (h *ReferralHandler) setReferralCookie(c *gin.Context, landing *service.CustomReferralLanding) {

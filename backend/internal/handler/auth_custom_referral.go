@@ -16,11 +16,27 @@ func (h *AuthHandler) SetCustomReferralService(customReferralService *service.Cu
 	h.customReferralService = customReferralService
 }
 
-func (h *AuthHandler) resolveAffiliateCode(c *gin.Context, raw string) string {
-	code := strings.ToUpper(strings.TrimSpace(raw))
-	if code != "" {
-		return code
+func (h *AuthHandler) resolveAffiliateAttribution(c *gin.Context, raw string) (string, string) {
+	explicitCode := strings.ToUpper(strings.TrimSpace(raw))
+	cookieCode := h.resolveAffiliateCookieCode(c)
+	switch {
+	case explicitCode != "" && cookieCode != "" && strings.EqualFold(explicitCode, cookieCode):
+		return explicitCode, service.AffiliateBindingSourceCookie
+	case explicitCode != "":
+		return explicitCode, service.AffiliateBindingSourceCode
+	case cookieCode != "":
+		return cookieCode, service.AffiliateBindingSourceCookie
+	default:
+		return "", ""
 	}
+}
+
+func (h *AuthHandler) resolveAffiliateCode(c *gin.Context, raw string) string {
+	code, _ := h.resolveAffiliateAttribution(c, raw)
+	return code
+}
+
+func (h *AuthHandler) resolveAffiliateCookieCode(c *gin.Context) string {
 	if h == nil || h.customReferralService == nil || c == nil {
 		return ""
 	}
@@ -32,7 +48,7 @@ func (h *AuthHandler) resolveAffiliateCode(c *gin.Context, raw string) string {
 	if err != nil {
 		return ""
 	}
-	code, err = h.customReferralService.ParseSignedCookieValue(c.Request.Context(), decoded)
+	code, err := h.customReferralService.ParseSignedCookieValue(c.Request.Context(), decoded)
 	if err != nil {
 		return ""
 	}

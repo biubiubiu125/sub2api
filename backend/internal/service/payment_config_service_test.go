@@ -432,6 +432,40 @@ func TestUpdatePaymentConfig_PersistsVisibleMethodRouting(t *testing.T) {
 	}
 }
 
+func TestUpdatePaymentConfig_PartialUpdatePreservesExistingValues(t *testing.T) {
+	repo := &paymentConfigSettingRepoStub{values: map[string]string{
+		SettingPaymentEnabled:      "true",
+		SettingEnabledPaymentTypes: "easypay",
+		SettingLoadBalanceStrategy: "round-robin",
+	}}
+	svc := &PaymentConfigService{settingRepo: repo}
+
+	alipayEnabled := true
+	err := svc.UpdatePaymentConfig(context.Background(), UpdatePaymentConfigRequest{
+		VisibleMethodAlipayEnabled: &alipayEnabled,
+		VisibleMethodAlipaySource:  paymentConfigStrPtr(VisibleMethodSourceEasyPayAlipay),
+	})
+	if err != nil {
+		t.Fatalf("UpdatePaymentConfig returned error: %v", err)
+	}
+
+	if repo.values[SettingPaymentEnabled] != "true" {
+		t.Fatalf("payment enabled = %q, want true", repo.values[SettingPaymentEnabled])
+	}
+	if repo.values[SettingEnabledPaymentTypes] != "easypay" {
+		t.Fatalf("enabled payment types = %q, want easypay", repo.values[SettingEnabledPaymentTypes])
+	}
+	if repo.values[SettingLoadBalanceStrategy] != "round-robin" {
+		t.Fatalf("load balance strategy = %q, want round-robin", repo.values[SettingLoadBalanceStrategy])
+	}
+	if repo.updates[SettingPaymentVisibleMethodAlipayEnabled] != "true" {
+		t.Fatalf("alipay enabled update = %q, want true", repo.updates[SettingPaymentVisibleMethodAlipayEnabled])
+	}
+	if _, ok := repo.updates[SettingPaymentEnabled]; ok {
+		t.Fatalf("payment enabled should not be updated during partial payment config patch")
+	}
+}
+
 func paymentConfigStrPtr(value string) *string {
 	return &value
 }
