@@ -343,7 +343,7 @@ func (s *PaymentService) ExecuteRefund(ctx context.Context, p *RefundPlan) (*Ref
 
 func (s *PaymentService) gwRefund(ctx context.Context, p *RefundPlan) error {
 	if p.Order.PaymentTradeNo == "" {
-		s.writeAuditLog(ctx, p.Order.ID, "REFUND_NO_TRADE_NO", "admin", map[string]any{"detail": "skipped"})
+		s.writeAuditLog(ctx, p.Order.ID, refundAuditAction("REFUND_NO_TRADE_NO", p.TotalRefundAmount), "admin", map[string]any{"detail": "skipped"})
 		return nil
 	}
 
@@ -354,7 +354,7 @@ func (s *PaymentService) gwRefund(ctx context.Context, p *RefundPlan) error {
 		return fmt.Errorf("get refund provider: %w", err)
 	}
 	if err := validateProviderSnapshotMetadata(p.Order, prov.ProviderKey(), providerMerchantIdentityMetadata(prov)); err != nil {
-		s.writeAuditLog(ctx, p.Order.ID, "REFUND_PROVIDER_METADATA_MISMATCH", "admin", map[string]any{
+		s.writeAuditLog(ctx, p.Order.ID, refundAuditAction("REFUND_PROVIDER_METADATA_MISMATCH", p.TotalRefundAmount), "admin", map[string]any{
 			"detail": err.Error(),
 		})
 		return err
@@ -384,12 +384,12 @@ func (s *PaymentService) getRefundProvider(ctx context.Context, o *dbent.Payment
 func (s *PaymentService) handleGwFail(ctx context.Context, p *RefundPlan, gErr error) (*RefundResult, error) {
 	if s.RollbackRefund(ctx, p, gErr) {
 		s.restoreStatus(ctx, p)
-		s.writeAuditLog(ctx, p.OrderID, "REFUND_GATEWAY_FAILED", "admin", map[string]any{"detail": psErrMsg(gErr)})
+		s.writeAuditLog(ctx, p.OrderID, refundAuditAction("REFUND_GATEWAY_FAILED", p.TotalRefundAmount), "admin", map[string]any{"detail": psErrMsg(gErr)})
 		return &RefundResult{Success: false, Warning: "gateway failed: " + psErrMsg(gErr) + ", rolled back"}, nil
 	}
 	now := time.Now()
 	_, _ = s.entClient.PaymentOrder.UpdateOneID(p.OrderID).SetStatus(OrderStatusRefundFailed).SetFailedAt(now).SetFailedReason(psErrMsg(gErr)).Save(ctx)
-	s.writeAuditLog(ctx, p.OrderID, "REFUND_FAILED", "admin", map[string]any{"detail": psErrMsg(gErr)})
+	s.writeAuditLog(ctx, p.OrderID, refundAuditAction("REFUND_FAILED", p.TotalRefundAmount), "admin", map[string]any{"detail": psErrMsg(gErr)})
 	return nil, infraerrors.InternalServer("REFUND_FAILED", psErrMsg(gErr))
 }
 
