@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -193,6 +194,72 @@ func TestPrepareRefundAllowsAdditionalPartialRefund(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, OrderStatusPartiallyRefunded, refreshed.Status)
 	require.Equal(t, 7.0, refreshed.RefundAmount)
+}
+
+func TestMarkRefundOkCreatesDistinctAuditLogsForPartialRefunds(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("refund-audit@example.com").
+		SetPasswordHash("hash").
+		SetUsername("refund-audit-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	inst, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeAlipay).
+		SetName("alipay-refund-audit-instance").
+		SetConfig("{}").
+		SetSupportedTypes("alipay").
+		SetEnabled(true).
+		SetRefundEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	instID := strconv.FormatInt(inst.ID, 10)
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(10).
+		SetPayAmount(10).
+		SetFeeRate(0).
+		SetRechargeCode("REFUND-AUDIT-ORDER").
+		SetOutTradeNo("sub2_refund_audit_order").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("trade-refund-audit").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusCompleted).
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetPaidAt(time.Now()).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderInstanceID(instID).
+		SetProviderKey(payment.TypeAlipay).
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{entClient: client}
+
+	plan1, result1, err := svc.PrepareRefund(ctx, order.ID, 4, "partial-1", false, false)
+	require.NoError(t, err)
+	require.Nil(t, result1)
+	_, err = svc.markRefundOk(ctx, plan1)
+	require.NoError(t, err)
+
+	plan2, result2, err := svc.PrepareRefund(ctx, order.ID, 3, "partial-2", false, false)
+	require.NoError(t, err)
+	require.Nil(t, result2)
+	_, err = svc.markRefundOk(ctx, plan2)
+	require.NoError(t, err)
+
+	logs, err := svc.GetOrderAuditLogs(ctx, order.ID)
+	require.NoError(t, err)
+	require.Len(t, logs, 2)
+	require.NotEqual(t, logs[0].Action, logs[1].Action)
+	require.True(t, strings.HasPrefix(logs[0].Action, "REFUND_SUCCESS@"))
+	require.True(t, strings.HasPrefix(logs[1].Action, "REFUND_SUCCESS@"))
 }
 
 func TestGwRefundRejectsAlipayMerchantIdentitySnapshotMismatch(t *testing.T) {

@@ -1,6 +1,8 @@
 package service
 
 import (
+	"crypto/sha1"
+	"encoding/hex"
 	"context"
 	"errors"
 	"fmt"
@@ -391,6 +393,28 @@ func (s *PaymentService) handleGwFail(ctx context.Context, p *RefundPlan, gErr e
 	return nil, infraerrors.InternalServer("REFUND_FAILED", psErrMsg(gErr))
 }
 
+// refundAuditAction returns a stable per-refund event key while staying within
+// the historical action column width. Repeated partial refunds on the same
+// order must keep distinct audit rows instead of colliding on (order_id, action).
+func refundAuditAction(base string, totalRefundAmount float64) string {
+	suffix := strings.ReplaceAll(moneyx.Currency(totalRefundAmount).StringFixed(2), ".", "_")
+	action := base + "@" + suffix
+	if len(action) <= 50 {
+		return action
+	}
+
+	sum := sha1.Sum([]byte(action))
+	hashSuffix := hex.EncodeToString(sum[:4])
+	maxBaseLen := 50 - 1 - len(hashSuffix)
+	if maxBaseLen < 1 {
+		return action[:50]
+	}
+	if len(base) > maxBaseLen {
+		base = base[:maxBaseLen]
+	}
+	return base + "@" + hashSuffix
+}
+
 func (s *PaymentService) markRefundOk(ctx context.Context, p *RefundPlan) (*RefundResult, error) {
 	fs := OrderStatusRefunded
 	if moneyx.Currency(p.TotalRefundAmount).LessThan(moneyx.Currency(p.Order.Amount)) {
@@ -408,7 +432,7 @@ func (s *PaymentService) markRefundOk(ctx context.Context, p *RefundPlan) (*Refu
 	}
 	if reversalErr != nil {
 		auditDetail["referralReversalError"] = reversalErr.Error()
-		s.writeAuditLog(ctx, p.OrderID, "REFUND_SUCCESS", "admin", auditDetail)
+		s.writeAuditLog(ctx, p.OrderID, refundAuditAction("REFUND_SUCCESS", p.TotalRefundAmount), "admin", auditDetail)
 		return &RefundResult{
 			Success:         true,
 			Warning:         "退款已成功，但返佣冲正失败：" + reversalErr.Error() + "。请在订单列表点击补冲销重试。",
@@ -416,7 +440,7 @@ func (s *PaymentService) markRefundOk(ctx context.Context, p *RefundPlan) (*Refu
 			SubDaysDeducted: p.SubDaysToDeduct,
 		}, nil
 	}
-	s.writeAuditLog(ctx, p.OrderID, "REFUND_SUCCESS", "admin", auditDetail)
+	s.writeAuditLog(ctx, p.OrderID, refundAuditAction("REFUND_SUCCESS", p.TotalRefundAmount), "admin", auditDetail)
 	return &RefundResult{Success: true, BalanceDeducted: p.BalanceToDeduct, SubDaysDeducted: p.SubDaysToDeduct}, nil
 }
 
@@ -435,7 +459,7 @@ func (s *PaymentService) applyCustomReferralRefundForOrder(ctx context.Context, 
 		RefundedAt:   time.Now(),
 	})
 	if err != nil {
-		s.writeAuditLog(ctx, p.OrderID, "CUSTOM_REFERRAL_REFUND_FAILED", "system", map[string]any{
+		s.writeAuditLog(ctx, p.OrderID, refundAuditAction("CUSTOM_REFERRAL_REFUND_FAILED", p.TotalRefundAmount), "system", map[string]any{
 			"error": err.Error(),
 		})
 		return 0, err
@@ -443,7 +467,7 @@ func (s *PaymentService) applyCustomReferralRefundForOrder(ctx context.Context, 
 	if reversed <= 0 {
 		return 0, nil
 	}
-	s.writeAuditLog(ctx, p.OrderID, "CUSTOM_REFERRAL_COMMISSION_REVERSED", "system", map[string]any{
+	s.writeAuditLog(ctx, p.OrderID, refundAuditAction("CUSTOM_REFERRAL_COMMISSION_REVERSED", p.TotalRefundAmount), "system", map[string]any{
 		"refundAmount":           refundAmount,
 		"incrementalOrderRefund": p.RefundAmount,
 		"totalOrderRefund":       p.TotalRefundAmount,
