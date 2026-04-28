@@ -629,7 +629,14 @@ func (s *CustomReferralService) BindInviteeByCode(ctx context.Context, inviteeUs
 	if cyclic {
 		return ErrCustomReferralCycleInvite
 	}
-	bound, err := s.repo.BindInvitee(ctx, inviteeUserID, affiliate.ID, affiliate.UserID, "cookie", affiliate.InviteCode, time.Now())
+	bindSource := affiliateSourceFromContext(ctx)
+	switch bindSource {
+	case AffiliateBindingSourceCode:
+	case AffiliateBindingSourceCookie:
+	default:
+		bindSource = AffiliateBindingSourceCookie
+	}
+	bound, err := s.repo.BindInvitee(ctx, inviteeUserID, affiliate.ID, affiliate.UserID, bindSource, affiliate.InviteCode, time.Now())
 	if err != nil {
 		return err
 	}

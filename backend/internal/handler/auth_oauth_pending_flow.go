@@ -1673,7 +1673,8 @@ func (h *AuthHandler) createPendingOAuthAccount(c *gin.Context, provider string)
 		return
 	}
 
-	registerCtx := service.ContextWithAffiliateCode(c.Request.Context(), h.resolveAffiliateCode(c, req.AffCode))
+	affiliateCode, affiliateSource := h.resolveAffiliateAttribution(c, req.AffCode)
+	registerCtx := service.ContextWithAffiliateAttribution(c.Request.Context(), affiliateCode, affiliateSource)
 
 	tokenPair, user, err := h.authService.RegisterOAuthEmailAccount(
 		registerCtx,
@@ -1750,7 +1751,8 @@ func (h *AuthHandler) createPendingOAuthAccount(c *gin.Context, provider string)
 		return
 	}
 
-	finalizeCtx := service.ContextWithAffiliateCode(txCtx, h.resolveAffiliateCode(c, req.AffCode))
+	affiliateCode, affiliateSource = h.resolveAffiliateAttribution(c, req.AffCode)
+	finalizeCtx := service.ContextWithAffiliateAttribution(txCtx, affiliateCode, affiliateSource)
 	if err := h.authService.FinalizeOAuthEmailAccount(
 		finalizeCtx,
 		user,

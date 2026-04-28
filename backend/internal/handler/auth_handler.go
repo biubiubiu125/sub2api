@@ -168,14 +168,16 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	affiliateCode, affiliateSource := h.resolveAffiliateAttribution(c, req.AffCode)
+	registerCtx := service.ContextWithAffiliateAttribution(c.Request.Context(), affiliateCode, affiliateSource)
 	_, user, err := h.authService.RegisterWithVerification(
-		c.Request.Context(),
+		registerCtx,
 		req.Email,
 		req.Password,
 		req.VerifyCode,
 		req.PromoCode,
 		req.InvitationCode,
-		h.resolveAffiliateCode(c, req.AffCode),
+		affiliateCode,
 	)
 	if err != nil {
 		response.ErrorFrom(c, err)

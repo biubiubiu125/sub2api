@@ -24,6 +24,9 @@ services:
   # Sub2API Application
   # ===========================================================================
   sub2api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
     image: weishaw/sub2api:latest
     container_name: sub2api
     restart: unless-stopped
