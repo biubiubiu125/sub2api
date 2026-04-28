@@ -91,6 +91,8 @@ func RegisterAdminRoutes(
 
 		// 渠道监控
 		registerChannelMonitorRoutes(admin, h)
+
+		// 邀请返利（专属用户管理）
 	}
 }
 
@@ -594,3 +596,5 @@ func registerChannelMonitorRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		templates.POST("/:id/apply", h.Admin.ChannelMonitorTemplate.Apply)
 	}
 }
+
+// registerAffiliateRoutes 注册邀请返利的管理端路由（专属用户配置）

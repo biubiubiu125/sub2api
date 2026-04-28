@@ -4,6 +4,7 @@
  */
 
 import { apiClient } from './client'
+import { oauthAffiliatePayload } from '@/utils/oauthAffiliate'
 import type {
   LoginRequest,
   RegisterRequest,
@@ -601,7 +602,7 @@ async function createPendingOAuthAccount(
     `/auth/oauth/${provider}/complete-registration`,
     {
       invitation_code: invitationCode,
-      ...(affiliateCode ? { aff_code: affiliateCode } : {}),
+      ...oauthAffiliatePayload(affiliateCode),
       ...serializeOAuthAdoptionDecision(decision)
     }
   )

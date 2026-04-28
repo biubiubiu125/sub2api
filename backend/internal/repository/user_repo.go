@@ -19,6 +19,7 @@ import (
 	dbuser "github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moneyx"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
@@ -691,36 +692,103 @@ func (r *userRepository) filterUsersByAttributes(ctx context.Context, attrs map[
 }
 
 func (r *userRepository) UpdateBalance(ctx context.Context, id int64, amount float64) error {
-	client := clientFromContext(ctx, r.client)
-	update := client.User.Update().Where(dbuser.IDEQ(id)).AddBalance(amount)
-	// Track cumulative recharge amount for percentage-based notifications
-	if amount > 0 {
-		update = update.AddTotalRecharged(amount)
+	entryType := "balance_update"
+	if moneyx.Currency(amount).GreaterThan(moneyx.Currency(0)) {
+		entryType = "balance_credit"
+	} else if moneyx.Currency(amount).LessThan(moneyx.Currency(0)) {
+		entryType = "balance_debit"
 	}
-	n, err := update.Save(ctx)
-	if err != nil {
-		return translatePersistenceError(err, service.ErrUserNotFound, nil)
-	}
-	if n == 0 {
-		return service.ErrUserNotFound
-	}
-	return nil
+	return r.applyBalanceDeltaWithLedger(ctx, id, amount, entryType, "user_balance", fmt.Sprintf("user:%d", id), "", "user repository balance update", "system", amount > 0)
 }
 
 // DeductBalance 扣除用户余额
 // 透支策略：允许余额变为负数，确保当前请求能够完成
 // 中间件会阻止余额 <= 0 的用户发起后续请求
 func (r *userRepository) DeductBalance(ctx context.Context, id int64, amount float64) error {
-	client := clientFromContext(ctx, r.client)
-	n, err := client.User.Update().
-		Where(dbuser.IDEQ(id)).
-		AddBalance(-amount).
-		Save(ctx)
+	return r.applyBalanceDeltaWithLedger(ctx, id, -amount, "balance_deduct", "user_balance", fmt.Sprintf("user:%d", id), "", "user repository balance deduction", "system", false)
+}
+
+func (r *userRepository) applyBalanceDeltaWithLedger(ctx context.Context, userID int64, delta float64, entryType, refType, refID, externalRefID, remark, operator string, countRecharge bool) error {
+	deltaDec := moneyx.Commission(delta)
+	if deltaDec.IsZero() {
+		return nil
+	}
+	if tx := dbent.TxFromContext(ctx); tx != nil {
+		exec := txAwareSQLExecutor(ctx, r.sql, r.client)
+		if exec == nil {
+			return fmt.Errorf("user balance ledger executor is not configured")
+		}
+		return r.applyBalanceDeltaWithLedgerExecutor(ctx, exec, userID, deltaDec.InexactFloat64(), entryType, refType, refID, externalRefID, remark, operator, countRecharge)
+	}
+	tx, err := r.client.Tx(ctx)
 	if err != nil {
 		return err
 	}
-	if n == 0 {
+	defer func() { _ = tx.Rollback() }()
+	txCtx := dbent.NewTxContext(ctx, tx)
+	exec := txAwareSQLExecutor(txCtx, r.sql, r.client)
+	if exec == nil {
+		return fmt.Errorf("user balance ledger executor is not configured")
+	}
+	if err := r.applyBalanceDeltaWithLedgerExecutor(txCtx, exec, userID, deltaDec.InexactFloat64(), entryType, refType, refID, externalRefID, remark, operator, countRecharge); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r *userRepository) applyBalanceDeltaWithLedgerExecutor(ctx context.Context, exec sqlQueryExecutor, userID int64, delta float64, entryType, refType, refID, externalRefID, remark, operator string, countRecharge bool) error {
+	rows, err := exec.QueryContext(ctx, `
+WITH locked_user AS (
+    SELECT id, balance AS before_balance
+    FROM users
+    WHERE id = $2 AND deleted_at IS NULL
+    FOR UPDATE
+),
+updated AS (
+    UPDATE users u
+    SET balance = u.balance + $1,
+        total_recharged = CASE WHEN $3 THEN u.total_recharged + $1 ELSE u.total_recharged END,
+        updated_at = NOW()
+    FROM locked_user lu
+    WHERE u.id = lu.id
+    RETURNING lu.before_balance::double precision, u.balance::double precision
+)
+SELECT before_balance, balance
+FROM updated`, delta, userID, countRecharge)
+	if err != nil {
+		return err
+	}
+	var beforeBalance float64
+	var afterBalance float64
+	if rows.Next() {
+		if err := rows.Scan(&beforeBalance, &afterBalance); err != nil {
+			_ = rows.Close()
+			return err
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if beforeBalance == 0 && afterBalance == 0 && !moneyx.Commission(delta).IsZero() {
 		return service.ErrUserNotFound
+	}
+	if _, err := exec.ExecContext(ctx, `
+INSERT INTO user_balance_ledger (
+    user_id, type, ref_type, ref_id, external_ref_id,
+    delta_amount, balance_before, balance_after, remark, operator, created_at
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())`,
+		userID,
+		strings.TrimSpace(entryType),
+		strings.TrimSpace(refType),
+		strings.TrimSpace(refID),
+		strings.TrimSpace(externalRefID),
+		moneyx.Commission(delta).InexactFloat64(),
+		moneyx.Commission(beforeBalance).InexactFloat64(),
+		moneyx.Commission(afterBalance).InexactFloat64(),
+		strings.TrimSpace(remark),
+		strings.TrimSpace(operator),
+	); err != nil {
+		return err
 	}
 	return nil
 }

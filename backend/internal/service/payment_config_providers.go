@@ -377,6 +377,10 @@ func (s *PaymentConfigService) UpdateProviderInstance(ctx context.Context, id in
 
 // GetUserRefundEligibleInstanceIDs returns provider instance IDs that allow user refund.
 func (s *PaymentConfigService) GetUserRefundEligibleInstanceIDs(ctx context.Context) ([]string, error) {
+	return []string{}, nil
+}
+
+func (s *PaymentConfigService) getUserRefundEligibleInstanceIDsEnabled(ctx context.Context) ([]string, error) {
 	instances, err := s.entClient.PaymentProviderInstance.Query().
 		Where(
 			paymentproviderinstance.RefundEnabledEQ(true),

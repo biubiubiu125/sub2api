@@ -33,6 +33,18 @@ type PaymentOrder struct {
 	PayAmount float64 `json:"pay_amount,omitempty"`
 	// FeeRate holds the value of the "fee_rate" field.
 	FeeRate float64 `json:"fee_rate,omitempty"`
+	// CommissionBaseAmount holds the value of the "commission_base_amount" field.
+	CommissionBaseAmount float64 `json:"commission_base_amount,omitempty"`
+	// CustomReferralAffiliateID holds the value of the "custom_referral_affiliate_id" field.
+	CustomReferralAffiliateID *int64 `json:"custom_referral_affiliate_id,omitempty"`
+	// CustomReferralRate holds the value of the "custom_referral_rate" field.
+	CustomReferralRate float64 `json:"custom_referral_rate,omitempty"`
+	// CustomReferralCommissionStatus holds the value of the "custom_referral_commission_status" field.
+	CustomReferralCommissionStatus string `json:"custom_referral_commission_status,omitempty"`
+	// CustomReferralCommissionError holds the value of the "custom_referral_commission_error" field.
+	CustomReferralCommissionError *string `json:"custom_referral_commission_error,omitempty"`
+	// CustomReferralCommissionAt holds the value of the "custom_referral_commission_at" field.
+	CustomReferralCommissionAt *time.Time `json:"custom_referral_commission_at,omitempty"`
 	// RechargeCode holds the value of the "recharge_code" field.
 	RechargeCode string `json:"recharge_code,omitempty"`
 	// OutTradeNo holds the value of the "out_trade_no" field.
@@ -132,13 +144,13 @@ func (*PaymentOrder) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case paymentorder.FieldForceRefund:
 			values[i] = new(sql.NullBool)
-		case paymentorder.FieldAmount, paymentorder.FieldPayAmount, paymentorder.FieldFeeRate, paymentorder.FieldRefundAmount:
+		case paymentorder.FieldAmount, paymentorder.FieldPayAmount, paymentorder.FieldFeeRate, paymentorder.FieldCommissionBaseAmount, paymentorder.FieldCustomReferralRate, paymentorder.FieldRefundAmount:
 			values[i] = new(sql.NullFloat64)
-		case paymentorder.FieldID, paymentorder.FieldUserID, paymentorder.FieldPlanID, paymentorder.FieldSubscriptionGroupID, paymentorder.FieldSubscriptionDays:
+		case paymentorder.FieldID, paymentorder.FieldUserID, paymentorder.FieldCustomReferralAffiliateID, paymentorder.FieldPlanID, paymentorder.FieldSubscriptionGroupID, paymentorder.FieldSubscriptionDays:
 			values[i] = new(sql.NullInt64)
-		case paymentorder.FieldUserEmail, paymentorder.FieldUserName, paymentorder.FieldUserNotes, paymentorder.FieldRechargeCode, paymentorder.FieldOutTradeNo, paymentorder.FieldPaymentType, paymentorder.FieldPaymentTradeNo, paymentorder.FieldPayURL, paymentorder.FieldQrCode, paymentorder.FieldQrCodeImg, paymentorder.FieldOrderType, paymentorder.FieldProviderInstanceID, paymentorder.FieldProviderKey, paymentorder.FieldStatus, paymentorder.FieldRefundReason, paymentorder.FieldRefundRequestReason, paymentorder.FieldRefundRequestedBy, paymentorder.FieldFailedReason, paymentorder.FieldClientIP, paymentorder.FieldSrcHost, paymentorder.FieldSrcURL:
+		case paymentorder.FieldUserEmail, paymentorder.FieldUserName, paymentorder.FieldUserNotes, paymentorder.FieldCustomReferralCommissionStatus, paymentorder.FieldCustomReferralCommissionError, paymentorder.FieldRechargeCode, paymentorder.FieldOutTradeNo, paymentorder.FieldPaymentType, paymentorder.FieldPaymentTradeNo, paymentorder.FieldPayURL, paymentorder.FieldQrCode, paymentorder.FieldQrCodeImg, paymentorder.FieldOrderType, paymentorder.FieldProviderInstanceID, paymentorder.FieldProviderKey, paymentorder.FieldStatus, paymentorder.FieldRefundReason, paymentorder.FieldRefundRequestReason, paymentorder.FieldRefundRequestedBy, paymentorder.FieldFailedReason, paymentorder.FieldClientIP, paymentorder.FieldSrcHost, paymentorder.FieldSrcURL:
 			values[i] = new(sql.NullString)
-		case paymentorder.FieldRefundAt, paymentorder.FieldRefundRequestedAt, paymentorder.FieldExpiresAt, paymentorder.FieldPaidAt, paymentorder.FieldCompletedAt, paymentorder.FieldFailedAt, paymentorder.FieldCreatedAt, paymentorder.FieldUpdatedAt:
+		case paymentorder.FieldCustomReferralCommissionAt, paymentorder.FieldRefundAt, paymentorder.FieldRefundRequestedAt, paymentorder.FieldExpiresAt, paymentorder.FieldPaidAt, paymentorder.FieldCompletedAt, paymentorder.FieldFailedAt, paymentorder.FieldCreatedAt, paymentorder.FieldUpdatedAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -203,6 +215,45 @@ func (_m *PaymentOrder) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field fee_rate", values[i])
 			} else if value.Valid {
 				_m.FeeRate = value.Float64
+			}
+		case paymentorder.FieldCommissionBaseAmount:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field commission_base_amount", values[i])
+			} else if value.Valid {
+				_m.CommissionBaseAmount = value.Float64
+			}
+		case paymentorder.FieldCustomReferralAffiliateID:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field custom_referral_affiliate_id", values[i])
+			} else if value.Valid {
+				_m.CustomReferralAffiliateID = new(int64)
+				*_m.CustomReferralAffiliateID = value.Int64
+			}
+		case paymentorder.FieldCustomReferralRate:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field custom_referral_rate", values[i])
+			} else if value.Valid {
+				_m.CustomReferralRate = value.Float64
+			}
+		case paymentorder.FieldCustomReferralCommissionStatus:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field custom_referral_commission_status", values[i])
+			} else if value.Valid {
+				_m.CustomReferralCommissionStatus = value.String
+			}
+		case paymentorder.FieldCustomReferralCommissionError:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field custom_referral_commission_error", values[i])
+			} else if value.Valid {
+				_m.CustomReferralCommissionError = new(string)
+				*_m.CustomReferralCommissionError = value.String
+			}
+		case paymentorder.FieldCustomReferralCommissionAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field custom_referral_commission_at", values[i])
+			} else if value.Valid {
+				_m.CustomReferralCommissionAt = new(time.Time)
+				*_m.CustomReferralCommissionAt = value.Time
 			}
 		case paymentorder.FieldRechargeCode:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -479,6 +530,30 @@ func (_m *PaymentOrder) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("fee_rate=")
 	builder.WriteString(fmt.Sprintf("%v", _m.FeeRate))
+	builder.WriteString(", ")
+	builder.WriteString("commission_base_amount=")
+	builder.WriteString(fmt.Sprintf("%v", _m.CommissionBaseAmount))
+	builder.WriteString(", ")
+	if v := _m.CustomReferralAffiliateID; v != nil {
+		builder.WriteString("custom_referral_affiliate_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("custom_referral_rate=")
+	builder.WriteString(fmt.Sprintf("%v", _m.CustomReferralRate))
+	builder.WriteString(", ")
+	builder.WriteString("custom_referral_commission_status=")
+	builder.WriteString(_m.CustomReferralCommissionStatus)
+	builder.WriteString(", ")
+	if v := _m.CustomReferralCommissionError; v != nil {
+		builder.WriteString("custom_referral_commission_error=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.CustomReferralCommissionAt; v != nil {
+		builder.WriteString("custom_referral_commission_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
 	builder.WriteString(", ")
 	builder.WriteString("recharge_code=")
 	builder.WriteString(_m.RechargeCode)

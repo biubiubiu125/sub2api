@@ -2,7 +2,7 @@
   <div class="card p-2">
     <div class="flex flex-wrap gap-2">
       <RouterLink
-        v-for="item in items"
+        v-for="item in visibleItems"
         :key="item.path"
         :to="item.path"
         :class="[
@@ -19,16 +19,21 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useRoute, RouterLink } from 'vue-router'
+import { useReferralStore } from '@/stores/referral'
 
 const route = useRoute()
+const referralStore = useReferralStore()
 
 const items = [
   { path: '/affiliate', label: '推广中心' },
   { path: '/affiliate/commissions', label: '佣金明细' },
-  { path: '/affiliate/withdraw', label: '提现申请' },
+  { path: '/affiliate/withdraw', label: '提现申请', requiresWithdraw: true },
   { path: '/affiliate/withdrawals', label: '提现记录' },
 ]
+
+const visibleItems = computed(() => items.filter((item) => !item.requiresWithdraw || referralStore.canWithdraw))
 
 function isActive(path: string): boolean {
   return route.path === path

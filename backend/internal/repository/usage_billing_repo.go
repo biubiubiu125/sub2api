@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strconv"
 	"strings"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
@@ -113,7 +114,7 @@ func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, t
 	}
 
 	if cmd.BalanceCost > 0 {
-		newBalance, err := deductUsageBillingBalance(ctx, tx, cmd.UserID, cmd.BalanceCost)
+		newBalance, err := deductUsageBillingBalance(ctx, tx, cmd.UserID, cmd.BalanceCost, cmd)
 		if err != nil {
 			return err
 		}
@@ -173,22 +174,62 @@ func incrementUsageBillingSubscription(ctx context.Context, tx *sql.Tx, subscrip
 	return service.ErrSubscriptionNotFound
 }
 
-func deductUsageBillingBalance(ctx context.Context, tx *sql.Tx, userID int64, amount float64) (float64, error) {
+func deductUsageBillingBalance(ctx context.Context, tx *sql.Tx, userID int64, amount float64, cmd *service.UsageBillingCommand) (float64, error) {
+	var beforeBalance float64
 	var newBalance float64
 	err := tx.QueryRowContext(ctx, `
-		UPDATE users
-		SET balance = balance - $1,
-			updated_at = NOW()
-		WHERE id = $2 AND deleted_at IS NULL
-		RETURNING balance
-	`, amount, userID).Scan(&newBalance)
+WITH locked_user AS (
+    SELECT id, balance AS before_balance
+    FROM users
+    WHERE id = $2 AND deleted_at IS NULL
+    FOR UPDATE
+),
+updated AS (
+    UPDATE users u
+    SET balance = u.balance - $1,
+        updated_at = NOW()
+    FROM locked_user lu
+    WHERE u.id = lu.id
+    RETURNING lu.before_balance::double precision, u.balance::double precision
+)
+SELECT before_balance, balance
+FROM updated
+	`, amount, userID).Scan(&beforeBalance, &newBalance)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, service.ErrUserNotFound
 	}
 	if err != nil {
 		return 0, err
 	}
+	externalRefID := ""
+	refID := ""
+	if cmd != nil {
+		refID = strings.TrimSpace(cmd.RequestID)
+		externalRefID = strings.TrimSpace(cmd.RequestID)
+		if cmd.APIKeyID > 0 && externalRefID != "" {
+			externalRefID = strings.Join([]string{"usage", strings.TrimSpace(cmd.RequestID), strings.TrimSpace(sqlInt64(cmd.APIKeyID))}, ":")
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `
+INSERT INTO user_balance_ledger (
+    user_id, type, ref_type, ref_id, external_ref_id,
+    delta_amount, balance_before, balance_after, remark, operator, created_at
+) VALUES ($1, 'usage_deduct', 'usage_request', $2, $3, $4, $5, $6, $7, 'system', NOW())`,
+		userID,
+		refID,
+		externalRefID,
+		-amount,
+		beforeBalance,
+		newBalance,
+		"usage billing balance deduction",
+	); err != nil {
+		return 0, err
+	}
 	return newBalance, nil
+}
+
+func sqlInt64(v int64) string {
+	return strings.TrimSpace(strconv.FormatInt(v, 10))
 }
 
 func incrementUsageBillingAPIKeyQuota(ctx context.Context, tx *sql.Tx, apiKeyID int64, amount float64) (bool, error) {

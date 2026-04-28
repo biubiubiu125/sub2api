@@ -366,3 +366,53 @@ func TestValidateProviderNotificationMetadataRejectsEasyPaySnapshotMismatch(t *t
 	})
 	assert.ErrorContains(t, err, "easypay pid mismatch")
 }
+
+func TestCustomReferralCommissionBaseAmountUsesSnapshotOnly(t *testing.T) {
+	t.Parallel()
+
+	order := &dbent.PaymentOrder{Amount: 200, PayAmount: 210, CommissionBaseAmount: 100}
+	assert.Equal(t, 100.0, customReferralCommissionBaseAmount(order))
+}
+
+func TestCustomReferralCommissionBaseAmountDoesNotFallbackToPayAmount(t *testing.T) {
+	t.Parallel()
+
+	order := &dbent.PaymentOrder{Amount: 88, PayAmount: 99}
+	assert.Equal(t, 0.0, customReferralCommissionBaseAmount(order))
+}
+
+func TestCustomReferralCommissionBaseSnapshotExcludesFeeAndGift(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, 100.0, customReferralCommissionBaseSnapshot(CreateOrderRequest{
+		OrderType: payment.OrderTypeBalance,
+		Amount:    130,
+	}, nil, 100))
+}
+
+func TestCustomReferralCommissionBaseSnapshotUsesPlanPriceForSubscription(t *testing.T) {
+	t.Parallel()
+
+	plan := &dbent.SubscriptionPlan{Price: 88.88}
+	assert.Equal(t, 88.88, customReferralCommissionBaseSnapshot(CreateOrderRequest{
+		OrderType: payment.OrderTypeSubscription,
+		Amount:    188,
+	}, plan, 99.99))
+}
+
+func TestCustomReferralCommissionBaseSnapshotUsesDiscountedPayableAmount(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, 79.9, customReferralCommissionBaseSnapshot(CreateOrderRequest{
+		OrderType: payment.OrderTypeBalance,
+		Amount:    100,
+	}, nil, 79.9))
+}
+
+func TestCustomReferralRefundBaseAmountUsesCommissionSnapshotProportion(t *testing.T) {
+	t.Parallel()
+
+	order := &dbent.PaymentOrder{Amount: 200, PayAmount: 210, CommissionBaseAmount: 100}
+	assert.Equal(t, 50.0, customReferralRefundBaseAmount(order, 100, 999))
+	assert.Equal(t, 100.0, customReferralRefundBaseAmount(order, 200, 999))
+}

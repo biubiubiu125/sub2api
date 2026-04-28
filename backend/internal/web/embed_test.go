@@ -745,6 +745,13 @@ func BenchmarkReplaceNoncePlaceholder(b *testing.B) {
 	}
 }
 
+func TestShouldBypassEmbeddedFrontendAllowsReferralLanding(t *testing.T) {
+	t.Parallel()
+
+	assert.True(t, shouldBypassEmbeddedFrontend("/r/ABC123"))
+	assert.False(t, shouldBypassEmbeddedFrontend("/register"))
+}
+
 func BenchmarkFrontendServerServeIndexHTML(b *testing.B) {
 	provider := &mockSettingsProvider{
 		settings: map[string]string{"test": "value"},

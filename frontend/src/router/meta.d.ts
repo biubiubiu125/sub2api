@@ -50,6 +50,18 @@ declare module 'vue-router' {
     requiresPayment?: boolean
 
     /**
+     * Whether this route requires an approved or disabled referral account
+     * @default false
+     */
+    requiresReferral?: boolean
+
+    /**
+     * Whether this route requires an approved referral account with withdrawals enabled
+     * @default false
+     */
+    requiresActiveReferral?: boolean
+
+    /**
      * i18n key for the page title
      */
     titleKey?: string

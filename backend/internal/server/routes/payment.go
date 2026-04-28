@@ -82,6 +82,8 @@ func RegisterPaymentRoutes(
 			adminOrders.GET("/:id", adminPaymentHandler.GetOrderDetail)
 			adminOrders.POST("/:id/cancel", adminPaymentHandler.CancelOrder)
 			adminOrders.POST("/:id/retry", adminPaymentHandler.RetryFulfillment)
+			adminOrders.POST("/:id/retry-referral-commission", adminPaymentHandler.RetryReferralCommission)
+			adminOrders.POST("/:id/retry-referral-refund", adminPaymentHandler.RetryReferralRefund)
 			adminOrders.POST("/:id/refund", adminPaymentHandler.ProcessRefund)
 		}
 

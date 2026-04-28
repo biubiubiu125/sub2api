@@ -3,6 +3,7 @@ package service
 import (
 	"math"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moneyx"
 	"github.com/shopspring/decimal"
 )
 
@@ -16,7 +17,7 @@ func normalizeBalanceRechargeMultiplier(multiplier float64) float64 {
 }
 
 func calculateCreditedBalance(paymentAmount, multiplier float64) float64 {
-	return decimal.NewFromFloat(paymentAmount).
+	return moneyx.Currency(paymentAmount).
 		Mul(decimal.NewFromFloat(normalizeBalanceRechargeMultiplier(multiplier))).
 		Round(2).
 		InexactFloat64()
@@ -26,12 +27,15 @@ func calculateGatewayRefundAmount(orderAmount, payAmount, refundAmount float64) 
 	if orderAmount <= 0 || payAmount <= 0 || refundAmount <= 0 {
 		return 0
 	}
-	if math.Abs(refundAmount-orderAmount) <= amountToleranceCNY {
-		return decimal.NewFromFloat(payAmount).Round(2).InexactFloat64()
+	orderAmountDec := moneyx.Currency(orderAmount)
+	payAmountDec := moneyx.Currency(payAmount)
+	refundAmountDec := moneyx.Currency(refundAmount)
+	if orderAmountDec.Equal(refundAmountDec) {
+		return payAmountDec.InexactFloat64()
 	}
-	return decimal.NewFromFloat(payAmount).
-		Mul(decimal.NewFromFloat(refundAmount)).
-		Div(decimal.NewFromFloat(orderAmount)).
+	return payAmountDec.
+		Mul(refundAmountDec).
+		Div(orderAmountDec).
 		Round(2).
 		InexactFloat64()
 }

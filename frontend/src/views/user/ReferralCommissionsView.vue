@@ -24,12 +24,10 @@
           暂无佣金记录。
         </div>
         <div v-else class="overflow-x-auto">
-          <table class="w-full min-w-[760px] text-left text-sm">
+          <table class="w-full min-w-[620px] text-left text-sm">
             <thead>
               <tr class="border-b border-gray-200 bg-gray-50 text-gray-500 dark:border-dark-700 dark:bg-dark-900 dark:text-dark-400">
                 <th class="px-4 py-3 font-medium">订单类型</th>
-                <th class="px-4 py-3 font-medium">返佣基数</th>
-                <th class="px-4 py-3 font-medium">返佣比例</th>
                 <th class="px-4 py-3 font-medium">佣金金额</th>
                 <th class="px-4 py-3 font-medium">状态</th>
                 <th class="px-4 py-3 font-medium">预计结算时间</th>
@@ -39,9 +37,10 @@
             <tbody>
               <tr v-for="item in items" :key="item.id" class="border-b border-gray-100 last:border-b-0 dark:border-dark-800">
                 <td class="px-4 py-3 text-gray-900 dark:text-white">{{ orderTypeLabel(item.order_type) }}</td>
-                <td class="px-4 py-3 text-gray-700 dark:text-gray-300">{{ formatMoney(item.base_amount) }}</td>
-                <td class="px-4 py-3 text-gray-700 dark:text-gray-300">{{ item.rate }}%</td>
-                <td class="px-4 py-3 font-medium text-gray-900 dark:text-white">{{ formatMoney(item.commission_amount) }}</td>
+                <td class="px-4 py-3 font-medium text-gray-900 dark:text-white">
+                  <div>{{ formatMoney(netCommissionAmount(item)) }}</div>
+                  <div v-if="item.refunded_amount > 0" class="text-xs font-normal text-gray-500 dark:text-dark-400">已冲销 {{ formatMoney(item.refunded_amount) }}</div>
+                </td>
                 <td class="px-4 py-3">
                   <span :class="statusClass(item.status)" class="rounded-full px-2.5 py-1 text-xs font-medium">{{ statusLabel(item.status) }}</span>
                 </td>
@@ -73,14 +72,14 @@ import Select from '@/components/common/Select.vue'
 import Icon from '@/components/icons/Icon.vue'
 import ReferralNavTabs from '@/components/referral/ReferralNavTabs.vue'
 import { referralAPI } from '@/api/referral'
-import type { CustomReferralCommission } from '@/types'
+import type { CustomReferralUserCommission } from '@/types'
 import { useAppStore } from '@/stores/app'
 import { formatDateTime } from '@/utils/format'
 import { extractApiErrorMessage } from '@/utils/apiError'
 
 const appStore = useAppStore()
 const loading = ref(false)
-const items = ref<CustomReferralCommission[]>([])
+const items = ref<CustomReferralUserCommission[]>([])
 const filters = reactive({ status: '' })
 const pagination = reactive({ page: 1, page_size: 20, total: 0 })
 
@@ -93,6 +92,10 @@ const statusOptions = computed(() => [
 
 function formatMoney(value: number): string {
   return `￥${value.toFixed(2)}`
+}
+
+function netCommissionAmount(item: CustomReferralUserCommission): number {
+  return Math.max(0, item.commission_amount - (item.refunded_amount || 0))
 }
 
 function orderTypeLabel(value: string): string {

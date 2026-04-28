@@ -2,20 +2,30 @@ package service
 
 import (
 	"context"
+	stdsql "database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
 	"math"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
+	"unsafe"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/paymentauditlog"
 	"github.com/Wei-Shaw/sub2api/ent/paymentorder"
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/moneyx"
+	"github.com/shopspring/decimal"
 )
+
+type paymentSQLExecutor interface {
+	ExecContext(context.Context, string, ...any) (stdsql.Result, error)
+	QueryContext(context.Context, string, ...any) (*stdsql.Rows, error)
+}
 
 // ErrOrderNotFound is returned by HandlePaymentNotification when the webhook
 // references an out_trade_no that does not exist in our DB. Callers (webhook
@@ -24,6 +34,13 @@ import (
 // retrying forever (e.g. when a foreign environment's webhook endpoint is
 // misconfigured to point at us, or when our orders table has been wiped).
 var ErrOrderNotFound = errors.New("payment order not found")
+
+const (
+	customReferralOrderCommissionStatusPending   = "pending"
+	customReferralOrderCommissionStatusSucceeded = "succeeded"
+	customReferralOrderCommissionStatusSkipped   = "skipped"
+	customReferralOrderCommissionStatusFailed    = "failed"
+)
 
 // --- Payment Notification & Fulfillment ---
 
@@ -100,15 +117,40 @@ func (s *PaymentService) confirmPayment(ctx context.Context, oid int64, tradeNo 
 		})
 		return fmt.Errorf("invalid paid amount from provider: %v", paid)
 	}
-	if math.Abs(paid-o.PayAmount) > amountToleranceCNY {
+	if !moneyx.Equal(paid, o.PayAmount, moneyx.ScaleCurrency) {
 		s.writeAuditLog(ctx, o.ID, "PAYMENT_AMOUNT_MISMATCH", pk, map[string]any{"expected": o.PayAmount, "paid": paid, "tradeNo": tradeNo})
 		return fmt.Errorf("amount mismatch: expected %.2f, got %.2f", o.PayAmount, paid)
+	}
+	if reused, err := s.paymentTradeNoUsedByAnotherOrder(ctx, o.ID, tradeNo); err != nil {
+		return err
+	} else if reused {
+		s.writeAuditLog(ctx, o.ID, "PAYMENT_TRADE_NO_REUSED", pk, map[string]any{
+			"tradeNo": tradeNo,
+		})
+		return fmt.Errorf("payment trade_no %s is already bound to another order", tradeNo)
 	}
 	return s.toPaid(ctx, o, tradeNo, paid, pk)
 }
 
 func isValidProviderAmount(amount float64) bool {
 	return amount > 0 && !math.IsNaN(amount) && !math.IsInf(amount, 0)
+}
+
+func (s *PaymentService) paymentTradeNoUsedByAnotherOrder(ctx context.Context, orderID int64, tradeNo string) (bool, error) {
+	tradeNo = strings.TrimSpace(tradeNo)
+	if s == nil || s.entClient == nil || tradeNo == "" {
+		return false, nil
+	}
+	exists, err := s.entClient.PaymentOrder.Query().
+		Where(
+			paymentorder.PaymentTradeNoEQ(tradeNo),
+			paymentorder.IDNEQ(orderID),
+		).
+		Exist(ctx)
+	if err != nil {
+		return false, fmt.Errorf("check reused payment trade_no %s: %w", tradeNo, err)
+	}
+	return exists, nil
 }
 
 func validateProviderNotificationMetadata(order *dbent.PaymentOrder, providerKey string, metadata map[string]string) error {
@@ -149,7 +191,7 @@ func (s *PaymentService) toPaid(ctx context.Context, o *dbent.PaymentOrder, trad
 		return fmt.Errorf("update to PAID: %w", err)
 	}
 	if c == 0 {
-		return s.alreadyProcessed(ctx, o)
+		return s.alreadyProcessed(ctx, o, tradeNo, pk)
 	}
 	if previousStatus == OrderStatusCancelled || previousStatus == OrderStatusExpired {
 		slog.Info("order recovered from webhook payment success",
@@ -169,18 +211,22 @@ func (s *PaymentService) toPaid(ctx context.Context, o *dbent.PaymentOrder, trad
 	return s.executeFulfillment(ctx, o.ID)
 }
 
-func (s *PaymentService) alreadyProcessed(ctx context.Context, o *dbent.PaymentOrder) error {
+func (s *PaymentService) alreadyProcessed(ctx context.Context, o *dbent.PaymentOrder, tradeNo, providerKey string) error {
 	cur, err := s.entClient.PaymentOrder.Get(ctx, o.ID)
 	if err != nil {
 		return nil
 	}
 	switch cur.Status {
-	case OrderStatusCompleted, OrderStatusRefunded:
+	case OrderStatusCompleted, OrderStatusRefunded, OrderStatusPaid, OrderStatusRecharging:
+		slog.Info("duplicate payment webhook ignored",
+			"orderID", cur.ID,
+			"status", cur.Status,
+			"tradeNo", tradeNo,
+			"provider", providerKey,
+		)
 		return nil
 	case OrderStatusFailed:
 		return s.executeFulfillment(ctx, o.ID)
-	case OrderStatusPaid, OrderStatusRecharging:
-		return fmt.Errorf("order %d is being processed", o.ID)
 	case OrderStatusExpired:
 		slog.Warn("webhook payment success for expired order beyond grace period",
 			"orderID", o.ID,
@@ -215,7 +261,8 @@ func (s *PaymentService) ExecuteBalanceFulfillment(ctx context.Context, oid int6
 		return infraerrors.NotFound("NOT_FOUND", "order not found")
 	}
 	if o.Status == OrderStatusCompleted {
-		return nil
+		_, err := s.applyCustomReferralCommissionForOrder(ctx, o)
+		return err
 	}
 	if psIsRefundStatus(o.Status) {
 		return infraerrors.BadRequest("INVALID_STATUS", "refund-related order cannot fulfill")
@@ -269,7 +316,7 @@ func (s *PaymentService) doBalance(ctx context.Context, o *dbent.PaymentOrder) e
 	switch action {
 	case redeemActionSkipCompleted:
 		// Code already created and redeemed — just mark completed
-		return s.markCompleted(ctx, o, "RECHARGE_SUCCESS")
+		return s.markCompletedAndApplyCustomReferralCommission(ctx, o, "RECHARGE_SUCCESS")
 	case redeemActionCreate:
 		rc := &RedeemCode{Code: o.RechargeCode, Type: RedeemTypeBalance, Value: o.Amount, Status: StatusUnused}
 		if err := s.redeemService.CreateCode(ctx, rc); err != nil {
@@ -281,15 +328,41 @@ func (s *PaymentService) doBalance(ctx context.Context, o *dbent.PaymentOrder) e
 	if _, err := s.redeemService.Redeem(ctx, o.UserID, o.RechargeCode); err != nil {
 		return fmt.Errorf("redeem balance: %w", err)
 	}
-	s.applyCustomReferralCommissionForOrder(ctx, o)
-	return s.markCompleted(ctx, o, "RECHARGE_SUCCESS")
+	return s.markCompletedAndApplyCustomReferralCommission(ctx, o, "RECHARGE_SUCCESS")
 }
 
 func (s *PaymentService) markCompleted(ctx context.Context, o *dbent.PaymentOrder, auditAction string) error {
+	if s == nil || s.entClient == nil || o == nil {
+		return fmt.Errorf("payment service is unavailable")
+	}
 	now := time.Now()
-	_, err := s.entClient.PaymentOrder.Update().Where(paymentorder.IDEQ(o.ID), paymentorder.StatusEQ(OrderStatusRecharging)).SetStatus(OrderStatusCompleted).SetCompletedAt(now).Save(ctx)
+	commissionStatus := customReferralInitialCommissionStatus(o)
+	tx, err := s.entClient.Tx(ctx)
+	if err != nil {
+		return fmt.Errorf("begin completion transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	txCtx := dbent.NewTxContext(ctx, tx)
+	update := tx.PaymentOrder.Update().
+		Where(paymentorder.IDEQ(o.ID), paymentorder.StatusEQ(OrderStatusRecharging)).
+		SetStatus(OrderStatusCompleted).
+		SetCompletedAt(now).
+		SetCustomReferralCommissionStatus(commissionStatus).
+		ClearCustomReferralCommissionError()
+	if commissionStatus == customReferralOrderCommissionStatusSkipped {
+		update = update.SetCustomReferralCommissionAt(now)
+	}
+	affected, err := update.Save(txCtx)
 	if err != nil {
 		return fmt.Errorf("mark completed: %w", err)
+	}
+	if affected > 0 && commissionStatus == customReferralOrderCommissionStatusPending {
+		if err := s.enqueueCustomReferralCommissionJobTx(txCtx, tx, o); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit completion transaction: %w", err)
 	}
 	s.writeAuditLog(ctx, o.ID, auditAction, "system", map[string]any{
 		"rechargeCode":   o.RechargeCode,
@@ -299,13 +372,24 @@ func (s *PaymentService) markCompleted(ctx context.Context, o *dbent.PaymentOrde
 	return nil
 }
 
+func (s *PaymentService) markCompletedAndApplyCustomReferralCommission(ctx context.Context, o *dbent.PaymentOrder, auditAction string) error {
+	if err := s.markCompleted(ctx, o, auditAction); err != nil {
+		return err
+	}
+	if amount, err := s.applyCustomReferralCommissionForOrder(ctx, o); err != nil {
+		slog.Error("custom referral commission job failed after order completion", "orderID", o.ID, "amount", amount, "error", err)
+	}
+	return nil
+}
+
 func (s *PaymentService) ExecuteSubscriptionFulfillment(ctx context.Context, oid int64) error {
 	o, err := s.entClient.PaymentOrder.Get(ctx, oid)
 	if err != nil {
 		return infraerrors.NotFound("NOT_FOUND", "order not found")
 	}
 	if o.Status == OrderStatusCompleted {
-		return nil
+		_, err := s.applyCustomReferralCommissionForOrder(ctx, o)
+		return err
 	}
 	if psIsRefundStatus(o.Status) {
 		return infraerrors.BadRequest("INVALID_STATUS", "refund-related order cannot fulfill")
@@ -341,15 +425,14 @@ func (s *PaymentService) doSub(ctx context.Context, o *dbent.PaymentOrder) error
 	// Prevents double-extension on retry after markCompleted fails.
 	if s.hasAuditLog(ctx, o.ID, "SUBSCRIPTION_SUCCESS") {
 		slog.Info("subscription already assigned for order, skipping", "orderID", o.ID, "groupID", gid)
-		return s.markCompleted(ctx, o, "SUBSCRIPTION_SUCCESS")
+		return s.markCompletedAndApplyCustomReferralCommission(ctx, o, "SUBSCRIPTION_SUCCESS")
 	}
 	orderNote := fmt.Sprintf("payment order %d", o.ID)
 	_, _, err = s.subscriptionSvc.AssignOrExtendSubscription(ctx, &AssignSubscriptionInput{UserID: o.UserID, GroupID: gid, ValidityDays: days, AssignedBy: 0, Notes: orderNote})
 	if err != nil {
 		return fmt.Errorf("assign subscription: %w", err)
 	}
-	s.applyCustomReferralCommissionForOrder(ctx, o)
-	return s.markCompleted(ctx, o, "SUBSCRIPTION_SUCCESS")
+	return s.markCompletedAndApplyCustomReferralCommission(ctx, o, "SUBSCRIPTION_SUCCESS")
 }
 
 func (s *PaymentService) hasAuditLog(ctx context.Context, orderID int64, action string) bool {
@@ -360,31 +443,333 @@ func (s *PaymentService) hasAuditLog(ctx context.Context, orderID int64, action 
 	return c > 0
 }
 
-func (s *PaymentService) applyCustomReferralCommissionForOrder(ctx context.Context, o *dbent.PaymentOrder) {
-	if o == nil || o.Amount <= 0 || s == nil || s.customReferralService == nil {
+func paymentSQLExecutorFromClient(client *dbent.Client) (paymentSQLExecutor, error) {
+	if client == nil {
+		return nil, fmt.Errorf("payment sql executor is not configured")
+	}
+	exec := paymentSQLExecutorFromEntClient(client)
+	if exec == nil {
+		return nil, fmt.Errorf("payment sql executor is not supported")
+	}
+	return exec, nil
+}
+
+func paymentSQLExecutorFromEntClient(client *dbent.Client) paymentSQLExecutor {
+	if client == nil {
+		return nil
+	}
+	clientValue := reflect.ValueOf(client).Elem()
+	configValue := clientValue.FieldByName("config")
+	driverValue := configValue.FieldByName("driver")
+	if !driverValue.IsValid() {
+		return nil
+	}
+	driver := reflect.NewAt(driverValue.Type(), unsafe.Pointer(driverValue.UnsafeAddr())).Elem().Interface()
+	exec, ok := driver.(paymentSQLExecutor)
+	if !ok {
+		return nil
+	}
+	return exec
+}
+
+func (s *PaymentService) enqueueCustomReferralCommissionJobTx(ctx context.Context, tx *dbent.Tx, o *dbent.PaymentOrder) error {
+	if tx == nil || o == nil {
+		return nil
+	}
+	baseAmount := customReferralCommissionBaseAmount(o)
+	affiliateID, _, ok := customReferralOrderSnapshot(o)
+	if baseAmount <= 0 || !ok {
+		return nil
+	}
+	exec, err := paymentSQLExecutorFromClient(tx.Client())
+	if err != nil {
+		return err
+	}
+	_, err = exec.ExecContext(ctx, `
+INSERT INTO custom_referral_commission_jobs (
+    order_id, affiliate_id, status, attempt_count, last_error, created_at, updated_at
+) VALUES ($1, $2, $3, 0, '', NOW(), NOW())
+ON CONFLICT (order_id) DO NOTHING`,
+		o.ID,
+		affiliateID,
+		CustomReferralCommissionJobStatusPending,
+	)
+	if err != nil {
+		return fmt.Errorf("enqueue custom referral commission job: %w", err)
+	}
+	return nil
+}
+
+func (s *PaymentService) ensureCustomReferralCommissionJob(ctx context.Context, o *dbent.PaymentOrder) error {
+	if s == nil || s.entClient == nil || o == nil {
+		return nil
+	}
+	baseAmount := customReferralCommissionBaseAmount(o)
+	affiliateID, _, ok := customReferralOrderSnapshot(o)
+	if baseAmount <= 0 || !ok {
+		return nil
+	}
+	exec, err := paymentSQLExecutorFromClient(s.entClient)
+	if err != nil {
+		return err
+	}
+	_, err = exec.ExecContext(ctx, `
+INSERT INTO custom_referral_commission_jobs (
+    order_id, affiliate_id, status, attempt_count, last_error, created_at, updated_at
+) VALUES ($1, $2, $3, 0, '', NOW(), NOW())
+ON CONFLICT (order_id) DO NOTHING`,
+		o.ID,
+		affiliateID,
+		CustomReferralCommissionJobStatusPending,
+	)
+	if err != nil {
+		return fmt.Errorf("ensure custom referral commission job: %w", err)
+	}
+	return nil
+}
+
+func (s *PaymentService) claimCustomReferralCommissionJob(ctx context.Context, orderID int64) (bool, error) {
+	exec, err := paymentSQLExecutorFromClient(s.entClient)
+	if err != nil {
+		return false, err
+	}
+	rows, err := exec.QueryContext(ctx, `
+UPDATE custom_referral_commission_jobs
+SET status = $2,
+    attempt_count = attempt_count + 1,
+    locked_at = NOW(),
+    last_error = '',
+    updated_at = NOW()
+WHERE order_id = $1
+  AND status IN ($3, $4)
+RETURNING id`,
+		orderID,
+		CustomReferralCommissionJobStatusProcessing,
+		CustomReferralCommissionJobStatusPending,
+		CustomReferralCommissionJobStatusFailed,
+	)
+	if err != nil {
+		return false, fmt.Errorf("claim custom referral commission job: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	return rows.Next(), rows.Err()
+}
+
+func (s *PaymentService) markCustomReferralCommissionJob(ctx context.Context, orderID int64, status string, cause error) {
+	exec, err := paymentSQLExecutorFromClient(s.entClient)
+	if err != nil {
+		slog.Error("custom referral commission job executor unavailable", "orderID", orderID, "error", err)
 		return
+	}
+	lastErr := ""
+	if cause != nil {
+		lastErr = cause.Error()
+	}
+	switch status {
+	case CustomReferralCommissionJobStatusSucceeded:
+		_, err = exec.ExecContext(ctx, `
+UPDATE custom_referral_commission_jobs
+SET status = $2,
+    succeeded_at = NOW(),
+    failed_at = NULL,
+    last_error = '',
+    updated_at = NOW()
+WHERE order_id = $1`,
+			orderID,
+			status,
+		)
+	default:
+		_, err = exec.ExecContext(ctx, `
+UPDATE custom_referral_commission_jobs
+SET status = $2,
+    failed_at = NOW(),
+    last_error = $3,
+    updated_at = NOW()
+WHERE order_id = $1`,
+			orderID,
+			status,
+			lastErr,
+		)
+	}
+	if err != nil {
+		slog.Error("mark custom referral commission job", "orderID", orderID, "status", status, "error", err)
+	}
+}
+
+func (s *PaymentService) applyCustomReferralCommissionForOrder(ctx context.Context, o *dbent.PaymentOrder) (float64, error) {
+	if o != nil && s != nil && s.entClient != nil {
+		if current, err := s.entClient.PaymentOrder.Get(ctx, o.ID); err == nil {
+			o = current
+		}
+	}
+	baseAmount := customReferralCommissionBaseAmount(o)
+	_, _, hasSnapshot := customReferralOrderSnapshot(o)
+	if o == nil || baseAmount <= 0 || !hasSnapshot {
+		if o != nil {
+			s.markCustomReferralCommissionStatus(ctx, o.ID, customReferralOrderCommissionStatusSkipped, nil)
+		}
+		return 0, nil
+	}
+	if err := s.ensureCustomReferralCommissionJob(ctx, o); err != nil {
+		s.markCustomReferralCommissionStatus(ctx, o.ID, customReferralOrderCommissionStatusFailed, err)
+		return 0, err
+	}
+	claimed, err := s.claimCustomReferralCommissionJob(ctx, o.ID)
+	if err != nil {
+		s.markCustomReferralCommissionStatus(ctx, o.ID, customReferralOrderCommissionStatusFailed, err)
+		return 0, err
+	}
+	if !claimed {
+		return 0, nil
+	}
+	amount, err := s.createCustomReferralCommissionForOrder(ctx, o)
+	if err != nil {
+		s.markCustomReferralCommissionJob(ctx, o.ID, CustomReferralCommissionJobStatusFailed, err)
+		return amount, err
+	}
+	s.markCustomReferralCommissionJob(ctx, o.ID, CustomReferralCommissionJobStatusSucceeded, nil)
+	return amount, nil
+}
+
+func (s *PaymentService) createCustomReferralCommissionForOrder(ctx context.Context, o *dbent.PaymentOrder) (float64, error) {
+	if o != nil && s != nil && s.entClient != nil {
+		if current, err := s.entClient.PaymentOrder.Get(ctx, o.ID); err == nil {
+			o = current
+		}
+	}
+	baseAmount := customReferralCommissionBaseAmount(o)
+	baseAmountDec := customReferralCommissionBaseAmountDecimal(o)
+	affiliateID, rate, rateDec, hasSnapshot := customReferralOrderSnapshotDecimal(o)
+	if o == nil || baseAmount <= 0 || !hasSnapshot {
+		if o != nil {
+			s.markCustomReferralCommissionStatus(ctx, o.ID, customReferralOrderCommissionStatusSkipped, nil)
+		}
+		return 0, nil
+	}
+	if s == nil || s.customReferralService == nil {
+		err := fmt.Errorf("custom referral service is unavailable")
+		s.markCustomReferralCommissionStatus(ctx, o.ID, customReferralOrderCommissionStatusFailed, err)
+		return 0, err
+	}
+	if o.CustomReferralCommissionStatus == customReferralOrderCommissionStatusSucceeded {
+		return 0, nil
 	}
 	amount, err := s.customReferralService.CreateCommissionForOrder(ctx, CustomReferralOrderInput{
-		OrderID:    o.ID,
-		UserID:     o.UserID,
-		OrderType:  strings.TrimSpace(o.OrderType),
-		BaseAmount: o.Amount,
-		PaidAt:     valueOrNow(o.PaidAt),
+		OrderID:           o.ID,
+		UserID:            o.UserID,
+		AffiliateID:       affiliateID,
+		OrderType:         strings.TrimSpace(o.OrderType),
+		BaseAmount:        baseAmount,
+		BaseAmountDecimal: baseAmountDec,
+		Rate:              rate,
+		RateDecimal:       rateDec,
+		PaidAt:            valueOrNow(o.PaidAt),
 	})
 	if err != nil {
+		s.markCustomReferralCommissionStatus(ctx, o.ID, customReferralOrderCommissionStatusFailed, err)
 		s.writeAuditLog(ctx, o.ID, "CUSTOM_REFERRAL_COMMISSION_FAILED", "system", map[string]any{
-			"error": err.Error(),
+			"baseAmount":  baseAmount,
+			"orderAmount": o.Amount,
+			"payAmount":   o.PayAmount,
+			"error":       err.Error(),
 		})
-		return
+		return 0, err
 	}
 	if amount <= 0 {
+		s.markCustomReferralCommissionStatus(ctx, o.ID, customReferralOrderCommissionStatusSkipped, nil)
+		return 0, nil
+	}
+	s.markCustomReferralCommissionStatus(ctx, o.ID, customReferralOrderCommissionStatusSucceeded, nil)
+	s.writeAuditLog(ctx, o.ID, "CUSTOM_REFERRAL_COMMISSION_PENDING", "system", map[string]any{
+		"baseAmount":  baseAmount,
+		"orderAmount": o.Amount,
+		"payAmount":   o.PayAmount,
+		"commission":  amount,
+		"orderType":   o.OrderType,
+	})
+	return amount, nil
+}
+
+func (s *PaymentService) RetryCustomReferralCommission(ctx context.Context, oid int64) (float64, error) {
+	if s == nil || s.customReferralService == nil {
+		return 0, infraerrors.BadRequest("CUSTOM_REFERRAL_UNAVAILABLE", "custom referral service is unavailable")
+	}
+	o, err := s.entClient.PaymentOrder.Get(ctx, oid)
+	if err != nil {
+		return 0, infraerrors.NotFound("NOT_FOUND", "order not found")
+	}
+	if o.Status != OrderStatusCompleted {
+		return 0, infraerrors.BadRequest("INVALID_STATUS", "only completed orders can retry referral commission")
+	}
+	baseAmount := customReferralCommissionBaseAmount(o)
+	if baseAmount <= 0 {
+		return 0, infraerrors.BadRequest("INVALID_AMOUNT", "order has no payable amount")
+	}
+	amount, err := s.applyCustomReferralCommissionForOrder(ctx, o)
+	if err != nil {
+		s.writeAuditLog(ctx, o.ID, "CUSTOM_REFERRAL_COMMISSION_RETRY_FAILED", "admin", map[string]any{"error": err.Error()})
+		return 0, err
+	}
+	if amount > 0 {
+		s.writeAuditLog(ctx, o.ID, "CUSTOM_REFERRAL_COMMISSION_RETRIED", "admin", map[string]any{
+			"baseAmount":  baseAmount,
+			"orderAmount": o.Amount,
+			"payAmount":   o.PayAmount,
+			"commission":  amount,
+			"orderType":   o.OrderType,
+		})
+	}
+	return amount, nil
+}
+
+func customReferralCommissionBaseAmount(o *dbent.PaymentOrder) float64 {
+	return customReferralCommissionBaseAmountDecimal(o).InexactFloat64()
+}
+
+func customReferralCommissionBaseAmountDecimal(o *dbent.PaymentOrder) decimal.Decimal {
+	if o == nil {
+		return decimal.Zero
+	}
+	return moneyx.Currency(o.CommissionBaseAmount)
+}
+
+func customReferralOrderSnapshot(o *dbent.PaymentOrder) (int64, float64, bool) {
+	affiliateID, rate, _, ok := customReferralOrderSnapshotDecimal(o)
+	return affiliateID, rate, ok
+}
+
+func customReferralOrderSnapshotDecimal(o *dbent.PaymentOrder) (int64, float64, decimal.Decimal, bool) {
+	if o == nil || o.CustomReferralAffiliateID == nil || *o.CustomReferralAffiliateID <= 0 || o.CustomReferralRate <= 0 {
+		return 0, 0, decimal.Zero, false
+	}
+	rateDec := moneyx.Rate(o.CustomReferralRate)
+	return *o.CustomReferralAffiliateID, rateDec.InexactFloat64(), rateDec, true
+}
+
+func customReferralInitialCommissionStatus(o *dbent.PaymentOrder) string {
+	baseAmount := customReferralCommissionBaseAmount(o)
+	_, _, ok := customReferralOrderSnapshot(o)
+	if baseAmount > 0 && ok {
+		return customReferralOrderCommissionStatusPending
+	}
+	return customReferralOrderCommissionStatusSkipped
+}
+
+func (s *PaymentService) markCustomReferralCommissionStatus(ctx context.Context, orderID int64, status string, cause error) {
+	if s == nil || s.entClient == nil || orderID <= 0 {
 		return
 	}
-	s.writeAuditLog(ctx, o.ID, "CUSTOM_REFERRAL_COMMISSION_PENDING", "system", map[string]any{
-		"baseAmount": o.Amount,
-		"commission": amount,
-		"orderType":  o.OrderType,
-	})
+	update := s.entClient.PaymentOrder.UpdateOneID(orderID).
+		SetCustomReferralCommissionStatus(status)
+	switch status {
+	case customReferralOrderCommissionStatusSucceeded, customReferralOrderCommissionStatusSkipped:
+		update = update.ClearCustomReferralCommissionError().SetCustomReferralCommissionAt(time.Now())
+	case customReferralOrderCommissionStatusFailed:
+		update = update.SetCustomReferralCommissionError(psErrMsg(cause))
+	}
+	if _, err := update.Save(ctx); err != nil {
+		slog.Warn("mark custom referral commission status failed", "orderID", orderID, "status", status, "error", err)
+	}
 }
 
 func valueOrNow(ts *time.Time) time.Time {

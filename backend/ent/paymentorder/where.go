@@ -90,6 +90,36 @@ func FeeRate(v float64) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldEQ(FieldFeeRate, v))
 }
 
+// CommissionBaseAmount applies equality check predicate on the "commission_base_amount" field. It's identical to CommissionBaseAmountEQ.
+func CommissionBaseAmount(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldCommissionBaseAmount, v))
+}
+
+// CustomReferralAffiliateID applies equality check predicate on the "custom_referral_affiliate_id" field. It's identical to CustomReferralAffiliateIDEQ.
+func CustomReferralAffiliateID(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldCustomReferralAffiliateID, v))
+}
+
+// CustomReferralRate applies equality check predicate on the "custom_referral_rate" field. It's identical to CustomReferralRateEQ.
+func CustomReferralRate(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldCustomReferralRate, v))
+}
+
+// CustomReferralCommissionStatus applies equality check predicate on the "custom_referral_commission_status" field. It's identical to CustomReferralCommissionStatusEQ.
+func CustomReferralCommissionStatus(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldCustomReferralCommissionStatus, v))
+}
+
+// CustomReferralCommissionError applies equality check predicate on the "custom_referral_commission_error" field. It's identical to CustomReferralCommissionErrorEQ.
+func CustomReferralCommissionError(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldCustomReferralCommissionError, v))
+}
+
+// CustomReferralCommissionAt applies equality check predicate on the "custom_referral_commission_at" field. It's identical to CustomReferralCommissionAtEQ.
+func CustomReferralCommissionAt(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldCustomReferralCommissionAt, v))
+}
+
 // RechargeCode applies equality check predicate on the "recharge_code" field. It's identical to RechargeCodeEQ.
 func RechargeCode(v string) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldEQ(FieldRechargeCode, v))
@@ -588,6 +618,326 @@ func FeeRateLT(v float64) predicate.PaymentOrder {
 // FeeRateLTE applies the LTE predicate on the "fee_rate" field.
 func FeeRateLTE(v float64) predicate.PaymentOrder {
 	return predicate.PaymentOrder(sql.FieldLTE(FieldFeeRate, v))
+}
+
+// CommissionBaseAmountEQ applies the EQ predicate on the "commission_base_amount" field.
+func CommissionBaseAmountEQ(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldCommissionBaseAmount, v))
+}
+
+// CommissionBaseAmountNEQ applies the NEQ predicate on the "commission_base_amount" field.
+func CommissionBaseAmountNEQ(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldCommissionBaseAmount, v))
+}
+
+// CommissionBaseAmountIn applies the In predicate on the "commission_base_amount" field.
+func CommissionBaseAmountIn(vs ...float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldCommissionBaseAmount, vs...))
+}
+
+// CommissionBaseAmountNotIn applies the NotIn predicate on the "commission_base_amount" field.
+func CommissionBaseAmountNotIn(vs ...float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldCommissionBaseAmount, vs...))
+}
+
+// CommissionBaseAmountGT applies the GT predicate on the "commission_base_amount" field.
+func CommissionBaseAmountGT(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldCommissionBaseAmount, v))
+}
+
+// CommissionBaseAmountGTE applies the GTE predicate on the "commission_base_amount" field.
+func CommissionBaseAmountGTE(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldCommissionBaseAmount, v))
+}
+
+// CommissionBaseAmountLT applies the LT predicate on the "commission_base_amount" field.
+func CommissionBaseAmountLT(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldCommissionBaseAmount, v))
+}
+
+// CommissionBaseAmountLTE applies the LTE predicate on the "commission_base_amount" field.
+func CommissionBaseAmountLTE(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldCommissionBaseAmount, v))
+}
+
+// CustomReferralAffiliateIDEQ applies the EQ predicate on the "custom_referral_affiliate_id" field.
+func CustomReferralAffiliateIDEQ(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldCustomReferralAffiliateID, v))
+}
+
+// CustomReferralAffiliateIDNEQ applies the NEQ predicate on the "custom_referral_affiliate_id" field.
+func CustomReferralAffiliateIDNEQ(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldCustomReferralAffiliateID, v))
+}
+
+// CustomReferralAffiliateIDIn applies the In predicate on the "custom_referral_affiliate_id" field.
+func CustomReferralAffiliateIDIn(vs ...int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldCustomReferralAffiliateID, vs...))
+}
+
+// CustomReferralAffiliateIDNotIn applies the NotIn predicate on the "custom_referral_affiliate_id" field.
+func CustomReferralAffiliateIDNotIn(vs ...int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldCustomReferralAffiliateID, vs...))
+}
+
+// CustomReferralAffiliateIDGT applies the GT predicate on the "custom_referral_affiliate_id" field.
+func CustomReferralAffiliateIDGT(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldCustomReferralAffiliateID, v))
+}
+
+// CustomReferralAffiliateIDGTE applies the GTE predicate on the "custom_referral_affiliate_id" field.
+func CustomReferralAffiliateIDGTE(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldCustomReferralAffiliateID, v))
+}
+
+// CustomReferralAffiliateIDLT applies the LT predicate on the "custom_referral_affiliate_id" field.
+func CustomReferralAffiliateIDLT(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldCustomReferralAffiliateID, v))
+}
+
+// CustomReferralAffiliateIDLTE applies the LTE predicate on the "custom_referral_affiliate_id" field.
+func CustomReferralAffiliateIDLTE(v int64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldCustomReferralAffiliateID, v))
+}
+
+// CustomReferralAffiliateIDIsNil applies the IsNil predicate on the "custom_referral_affiliate_id" field.
+func CustomReferralAffiliateIDIsNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIsNull(FieldCustomReferralAffiliateID))
+}
+
+// CustomReferralAffiliateIDNotNil applies the NotNil predicate on the "custom_referral_affiliate_id" field.
+func CustomReferralAffiliateIDNotNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotNull(FieldCustomReferralAffiliateID))
+}
+
+// CustomReferralRateEQ applies the EQ predicate on the "custom_referral_rate" field.
+func CustomReferralRateEQ(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldCustomReferralRate, v))
+}
+
+// CustomReferralRateNEQ applies the NEQ predicate on the "custom_referral_rate" field.
+func CustomReferralRateNEQ(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldCustomReferralRate, v))
+}
+
+// CustomReferralRateIn applies the In predicate on the "custom_referral_rate" field.
+func CustomReferralRateIn(vs ...float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldCustomReferralRate, vs...))
+}
+
+// CustomReferralRateNotIn applies the NotIn predicate on the "custom_referral_rate" field.
+func CustomReferralRateNotIn(vs ...float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldCustomReferralRate, vs...))
+}
+
+// CustomReferralRateGT applies the GT predicate on the "custom_referral_rate" field.
+func CustomReferralRateGT(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldCustomReferralRate, v))
+}
+
+// CustomReferralRateGTE applies the GTE predicate on the "custom_referral_rate" field.
+func CustomReferralRateGTE(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldCustomReferralRate, v))
+}
+
+// CustomReferralRateLT applies the LT predicate on the "custom_referral_rate" field.
+func CustomReferralRateLT(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldCustomReferralRate, v))
+}
+
+// CustomReferralRateLTE applies the LTE predicate on the "custom_referral_rate" field.
+func CustomReferralRateLTE(v float64) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldCustomReferralRate, v))
+}
+
+// CustomReferralCommissionStatusEQ applies the EQ predicate on the "custom_referral_commission_status" field.
+func CustomReferralCommissionStatusEQ(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldCustomReferralCommissionStatus, v))
+}
+
+// CustomReferralCommissionStatusNEQ applies the NEQ predicate on the "custom_referral_commission_status" field.
+func CustomReferralCommissionStatusNEQ(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldCustomReferralCommissionStatus, v))
+}
+
+// CustomReferralCommissionStatusIn applies the In predicate on the "custom_referral_commission_status" field.
+func CustomReferralCommissionStatusIn(vs ...string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldCustomReferralCommissionStatus, vs...))
+}
+
+// CustomReferralCommissionStatusNotIn applies the NotIn predicate on the "custom_referral_commission_status" field.
+func CustomReferralCommissionStatusNotIn(vs ...string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldCustomReferralCommissionStatus, vs...))
+}
+
+// CustomReferralCommissionStatusGT applies the GT predicate on the "custom_referral_commission_status" field.
+func CustomReferralCommissionStatusGT(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldCustomReferralCommissionStatus, v))
+}
+
+// CustomReferralCommissionStatusGTE applies the GTE predicate on the "custom_referral_commission_status" field.
+func CustomReferralCommissionStatusGTE(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldCustomReferralCommissionStatus, v))
+}
+
+// CustomReferralCommissionStatusLT applies the LT predicate on the "custom_referral_commission_status" field.
+func CustomReferralCommissionStatusLT(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldCustomReferralCommissionStatus, v))
+}
+
+// CustomReferralCommissionStatusLTE applies the LTE predicate on the "custom_referral_commission_status" field.
+func CustomReferralCommissionStatusLTE(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldCustomReferralCommissionStatus, v))
+}
+
+// CustomReferralCommissionStatusContains applies the Contains predicate on the "custom_referral_commission_status" field.
+func CustomReferralCommissionStatusContains(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldContains(FieldCustomReferralCommissionStatus, v))
+}
+
+// CustomReferralCommissionStatusHasPrefix applies the HasPrefix predicate on the "custom_referral_commission_status" field.
+func CustomReferralCommissionStatusHasPrefix(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldHasPrefix(FieldCustomReferralCommissionStatus, v))
+}
+
+// CustomReferralCommissionStatusHasSuffix applies the HasSuffix predicate on the "custom_referral_commission_status" field.
+func CustomReferralCommissionStatusHasSuffix(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldHasSuffix(FieldCustomReferralCommissionStatus, v))
+}
+
+// CustomReferralCommissionStatusEqualFold applies the EqualFold predicate on the "custom_referral_commission_status" field.
+func CustomReferralCommissionStatusEqualFold(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEqualFold(FieldCustomReferralCommissionStatus, v))
+}
+
+// CustomReferralCommissionStatusContainsFold applies the ContainsFold predicate on the "custom_referral_commission_status" field.
+func CustomReferralCommissionStatusContainsFold(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldContainsFold(FieldCustomReferralCommissionStatus, v))
+}
+
+// CustomReferralCommissionErrorEQ applies the EQ predicate on the "custom_referral_commission_error" field.
+func CustomReferralCommissionErrorEQ(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldCustomReferralCommissionError, v))
+}
+
+// CustomReferralCommissionErrorNEQ applies the NEQ predicate on the "custom_referral_commission_error" field.
+func CustomReferralCommissionErrorNEQ(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldCustomReferralCommissionError, v))
+}
+
+// CustomReferralCommissionErrorIn applies the In predicate on the "custom_referral_commission_error" field.
+func CustomReferralCommissionErrorIn(vs ...string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldCustomReferralCommissionError, vs...))
+}
+
+// CustomReferralCommissionErrorNotIn applies the NotIn predicate on the "custom_referral_commission_error" field.
+func CustomReferralCommissionErrorNotIn(vs ...string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldCustomReferralCommissionError, vs...))
+}
+
+// CustomReferralCommissionErrorGT applies the GT predicate on the "custom_referral_commission_error" field.
+func CustomReferralCommissionErrorGT(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldCustomReferralCommissionError, v))
+}
+
+// CustomReferralCommissionErrorGTE applies the GTE predicate on the "custom_referral_commission_error" field.
+func CustomReferralCommissionErrorGTE(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldCustomReferralCommissionError, v))
+}
+
+// CustomReferralCommissionErrorLT applies the LT predicate on the "custom_referral_commission_error" field.
+func CustomReferralCommissionErrorLT(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldCustomReferralCommissionError, v))
+}
+
+// CustomReferralCommissionErrorLTE applies the LTE predicate on the "custom_referral_commission_error" field.
+func CustomReferralCommissionErrorLTE(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldCustomReferralCommissionError, v))
+}
+
+// CustomReferralCommissionErrorContains applies the Contains predicate on the "custom_referral_commission_error" field.
+func CustomReferralCommissionErrorContains(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldContains(FieldCustomReferralCommissionError, v))
+}
+
+// CustomReferralCommissionErrorHasPrefix applies the HasPrefix predicate on the "custom_referral_commission_error" field.
+func CustomReferralCommissionErrorHasPrefix(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldHasPrefix(FieldCustomReferralCommissionError, v))
+}
+
+// CustomReferralCommissionErrorHasSuffix applies the HasSuffix predicate on the "custom_referral_commission_error" field.
+func CustomReferralCommissionErrorHasSuffix(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldHasSuffix(FieldCustomReferralCommissionError, v))
+}
+
+// CustomReferralCommissionErrorIsNil applies the IsNil predicate on the "custom_referral_commission_error" field.
+func CustomReferralCommissionErrorIsNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIsNull(FieldCustomReferralCommissionError))
+}
+
+// CustomReferralCommissionErrorNotNil applies the NotNil predicate on the "custom_referral_commission_error" field.
+func CustomReferralCommissionErrorNotNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotNull(FieldCustomReferralCommissionError))
+}
+
+// CustomReferralCommissionErrorEqualFold applies the EqualFold predicate on the "custom_referral_commission_error" field.
+func CustomReferralCommissionErrorEqualFold(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEqualFold(FieldCustomReferralCommissionError, v))
+}
+
+// CustomReferralCommissionErrorContainsFold applies the ContainsFold predicate on the "custom_referral_commission_error" field.
+func CustomReferralCommissionErrorContainsFold(v string) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldContainsFold(FieldCustomReferralCommissionError, v))
+}
+
+// CustomReferralCommissionAtEQ applies the EQ predicate on the "custom_referral_commission_at" field.
+func CustomReferralCommissionAtEQ(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldEQ(FieldCustomReferralCommissionAt, v))
+}
+
+// CustomReferralCommissionAtNEQ applies the NEQ predicate on the "custom_referral_commission_at" field.
+func CustomReferralCommissionAtNEQ(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNEQ(FieldCustomReferralCommissionAt, v))
+}
+
+// CustomReferralCommissionAtIn applies the In predicate on the "custom_referral_commission_at" field.
+func CustomReferralCommissionAtIn(vs ...time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIn(FieldCustomReferralCommissionAt, vs...))
+}
+
+// CustomReferralCommissionAtNotIn applies the NotIn predicate on the "custom_referral_commission_at" field.
+func CustomReferralCommissionAtNotIn(vs ...time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotIn(FieldCustomReferralCommissionAt, vs...))
+}
+
+// CustomReferralCommissionAtGT applies the GT predicate on the "custom_referral_commission_at" field.
+func CustomReferralCommissionAtGT(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGT(FieldCustomReferralCommissionAt, v))
+}
+
+// CustomReferralCommissionAtGTE applies the GTE predicate on the "custom_referral_commission_at" field.
+func CustomReferralCommissionAtGTE(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldGTE(FieldCustomReferralCommissionAt, v))
+}
+
+// CustomReferralCommissionAtLT applies the LT predicate on the "custom_referral_commission_at" field.
+func CustomReferralCommissionAtLT(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLT(FieldCustomReferralCommissionAt, v))
+}
+
+// CustomReferralCommissionAtLTE applies the LTE predicate on the "custom_referral_commission_at" field.
+func CustomReferralCommissionAtLTE(v time.Time) predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldLTE(FieldCustomReferralCommissionAt, v))
+}
+
+// CustomReferralCommissionAtIsNil applies the IsNil predicate on the "custom_referral_commission_at" field.
+func CustomReferralCommissionAtIsNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldIsNull(FieldCustomReferralCommissionAt))
+}
+
+// CustomReferralCommissionAtNotNil applies the NotNil predicate on the "custom_referral_commission_at" field.
+func CustomReferralCommissionAtNotNil() predicate.PaymentOrder {
+	return predicate.PaymentOrder(sql.FieldNotNull(FieldCustomReferralCommissionAt))
 }
 
 // RechargeCodeEQ applies the EQ predicate on the "recharge_code" field.

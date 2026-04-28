@@ -114,7 +114,22 @@ func TestPrepareRefundRejectsLegacyGuessedProviderInstance(t *testing.T) {
 	require.Nil(t, plan)
 	require.Nil(t, result)
 	require.Error(t, err)
-	require.Equal(t, "REFUND_DISABLED", infraerrors.Reason(err))
+	require.Equal(t, "REFUND_UNSUPPORTED", infraerrors.Reason(err))
+}
+
+func TestRefundEntrypointsRejectWhenUnsupported(t *testing.T) {
+	ctx := context.Background()
+	svc := &PaymentService{}
+
+	err := svc.RequestRefund(ctx, 1, 2, "reason")
+	require.Error(t, err)
+	require.Equal(t, "REFUND_UNSUPPORTED", infraerrors.Reason(err))
+
+	plan, result, err := svc.PrepareRefund(ctx, 1, 0, "reason", false, false)
+	require.Nil(t, plan)
+	require.Nil(t, result)
+	require.Error(t, err)
+	require.Equal(t, "REFUND_UNSUPPORTED", infraerrors.Reason(err))
 }
 
 func TestGwRefundRejectsAlipayMerchantIdentitySnapshotMismatch(t *testing.T) {

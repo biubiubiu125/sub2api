@@ -52,8 +52,22 @@
         </div>
       </div>
 
+      <div
+        v-if="referralErrorMessage"
+        class="rounded-xl border border-red-200 bg-red-50 p-4 dark:border-red-800/50 dark:bg-red-900/20"
+      >
+        <div class="flex items-start gap-3">
+          <div class="flex-shrink-0">
+            <Icon name="exclamationCircle" size="md" class="text-red-500" />
+          </div>
+          <p class="text-sm text-red-700 dark:text-red-400">
+            {{ referralErrorMessage }}
+          </p>
+        </div>
+      </div>
+
       <!-- Registration Form -->
-      <form v-else @submit.prevent="handleRegister" class="space-y-5">
+      <form v-if="registrationEnabled || !settingsLoaded" @submit.prevent="handleRegister" class="space-y-5">
         <!-- Email Input -->
         <div>
           <label for="email" class="input-label">
@@ -289,7 +303,11 @@ import {
   validateInvitationCode
 } from '@/api/auth'
 import { buildAuthErrorMessage } from '@/utils/authError'
-import { captureAffiliateCodeFromQuery, getAffiliateReferralCode } from '@/utils/affiliateCookie'
+import {
+  captureAffiliateCodeFromQuery,
+  clearAffiliateReferralCookie,
+  getAffiliateReferralCode
+} from '@/utils/affiliateCookie'
 import {
   isRegistrationEmailSuffixAllowed,
   normalizeRegistrationEmailSuffixWhitelist
@@ -309,6 +327,7 @@ const appStore = useAppStore()
 const isLoading = ref<boolean>(false)
 const settingsLoaded = ref<boolean>(false)
 const errorMessage = ref<string>('')
+const referralErrorMessage = ref<string>('')
 const showPassword = ref<boolean>(false)
 
 // Public settings
@@ -364,6 +383,7 @@ const errors = reactive({
 })
 
 const validationToastMessage = computed(() =>
+  referralErrorMessage.value ||
   errors.email ||
   errors.password ||
   (invitationValidation.invalid ? invitationValidation.message : '') ||
@@ -378,6 +398,16 @@ watch(validationToastMessage, (value, previousValue) => {
     appStore.showError(value)
   }
 })
+
+function firstRouteQueryValue(value: unknown): string {
+  if (typeof value === 'string') {
+    return value
+  }
+  if (Array.isArray(value)) {
+    return value.find((item): item is string => typeof item === 'string' && item.trim().length > 0) || ''
+  }
+  return ''
+}
 
 // ==================== Lifecycle ====================
 
@@ -408,10 +438,17 @@ onMounted(async () => {
         await validatePromoCodeDebounced(promoParam)
       }
     }
-    formData.aff_code =
-      captureAffiliateCodeFromQuery(route.query as Record<string, unknown>)
-      || getAffiliateReferralCode()
-      || ''
+    if (firstRouteQueryValue(route.query.referral_error) === 'invalid_code') {
+      clearAffiliateReferralCookie()
+      formData.aff_code = ''
+      referralErrorMessage.value = t('auth.referralCodeInvalid')
+    } else {
+      referralErrorMessage.value = ''
+      formData.aff_code =
+        (authStore.isAuthenticated ? null : captureAffiliateCodeFromQuery(route.query as Record<string, unknown>))
+        || getAffiliateReferralCode()
+        || ''
+    }
   } catch (error) {
     console.error('Failed to load public settings:', error)
   } finally {

@@ -81,6 +81,90 @@ func (_c *PaymentOrderCreate) SetNillableFeeRate(v *float64) *PaymentOrderCreate
 	return _c
 }
 
+// SetCommissionBaseAmount sets the "commission_base_amount" field.
+func (_c *PaymentOrderCreate) SetCommissionBaseAmount(v float64) *PaymentOrderCreate {
+	_c.mutation.SetCommissionBaseAmount(v)
+	return _c
+}
+
+// SetNillableCommissionBaseAmount sets the "commission_base_amount" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableCommissionBaseAmount(v *float64) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetCommissionBaseAmount(*v)
+	}
+	return _c
+}
+
+// SetCustomReferralAffiliateID sets the "custom_referral_affiliate_id" field.
+func (_c *PaymentOrderCreate) SetCustomReferralAffiliateID(v int64) *PaymentOrderCreate {
+	_c.mutation.SetCustomReferralAffiliateID(v)
+	return _c
+}
+
+// SetNillableCustomReferralAffiliateID sets the "custom_referral_affiliate_id" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableCustomReferralAffiliateID(v *int64) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetCustomReferralAffiliateID(*v)
+	}
+	return _c
+}
+
+// SetCustomReferralRate sets the "custom_referral_rate" field.
+func (_c *PaymentOrderCreate) SetCustomReferralRate(v float64) *PaymentOrderCreate {
+	_c.mutation.SetCustomReferralRate(v)
+	return _c
+}
+
+// SetNillableCustomReferralRate sets the "custom_referral_rate" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableCustomReferralRate(v *float64) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetCustomReferralRate(*v)
+	}
+	return _c
+}
+
+// SetCustomReferralCommissionStatus sets the "custom_referral_commission_status" field.
+func (_c *PaymentOrderCreate) SetCustomReferralCommissionStatus(v string) *PaymentOrderCreate {
+	_c.mutation.SetCustomReferralCommissionStatus(v)
+	return _c
+}
+
+// SetNillableCustomReferralCommissionStatus sets the "custom_referral_commission_status" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableCustomReferralCommissionStatus(v *string) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetCustomReferralCommissionStatus(*v)
+	}
+	return _c
+}
+
+// SetCustomReferralCommissionError sets the "custom_referral_commission_error" field.
+func (_c *PaymentOrderCreate) SetCustomReferralCommissionError(v string) *PaymentOrderCreate {
+	_c.mutation.SetCustomReferralCommissionError(v)
+	return _c
+}
+
+// SetNillableCustomReferralCommissionError sets the "custom_referral_commission_error" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableCustomReferralCommissionError(v *string) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetCustomReferralCommissionError(*v)
+	}
+	return _c
+}
+
+// SetCustomReferralCommissionAt sets the "custom_referral_commission_at" field.
+func (_c *PaymentOrderCreate) SetCustomReferralCommissionAt(v time.Time) *PaymentOrderCreate {
+	_c.mutation.SetCustomReferralCommissionAt(v)
+	return _c
+}
+
+// SetNillableCustomReferralCommissionAt sets the "custom_referral_commission_at" field if the given value is not nil.
+func (_c *PaymentOrderCreate) SetNillableCustomReferralCommissionAt(v *time.Time) *PaymentOrderCreate {
+	if v != nil {
+		_c.SetCustomReferralCommissionAt(*v)
+	}
+	return _c
+}
+
 // SetRechargeCode sets the "recharge_code" field.
 func (_c *PaymentOrderCreate) SetRechargeCode(v string) *PaymentOrderCreate {
 	_c.mutation.SetRechargeCode(v)
@@ -517,6 +601,18 @@ func (_c *PaymentOrderCreate) defaults() {
 		v := paymentorder.DefaultFeeRate
 		_c.mutation.SetFeeRate(v)
 	}
+	if _, ok := _c.mutation.CommissionBaseAmount(); !ok {
+		v := paymentorder.DefaultCommissionBaseAmount
+		_c.mutation.SetCommissionBaseAmount(v)
+	}
+	if _, ok := _c.mutation.CustomReferralRate(); !ok {
+		v := paymentorder.DefaultCustomReferralRate
+		_c.mutation.SetCustomReferralRate(v)
+	}
+	if _, ok := _c.mutation.CustomReferralCommissionStatus(); !ok {
+		v := paymentorder.DefaultCustomReferralCommissionStatus
+		_c.mutation.SetCustomReferralCommissionStatus(v)
+	}
 	if _, ok := _c.mutation.OutTradeNo(); !ok {
 		v := paymentorder.DefaultOutTradeNo
 		_c.mutation.SetOutTradeNo(v)
@@ -576,6 +672,20 @@ func (_c *PaymentOrderCreate) check() error {
 	}
 	if _, ok := _c.mutation.FeeRate(); !ok {
 		return &ValidationError{Name: "fee_rate", err: errors.New(`ent: missing required field "PaymentOrder.fee_rate"`)}
+	}
+	if _, ok := _c.mutation.CommissionBaseAmount(); !ok {
+		return &ValidationError{Name: "commission_base_amount", err: errors.New(`ent: missing required field "PaymentOrder.commission_base_amount"`)}
+	}
+	if _, ok := _c.mutation.CustomReferralRate(); !ok {
+		return &ValidationError{Name: "custom_referral_rate", err: errors.New(`ent: missing required field "PaymentOrder.custom_referral_rate"`)}
+	}
+	if _, ok := _c.mutation.CustomReferralCommissionStatus(); !ok {
+		return &ValidationError{Name: "custom_referral_commission_status", err: errors.New(`ent: missing required field "PaymentOrder.custom_referral_commission_status"`)}
+	}
+	if v, ok := _c.mutation.CustomReferralCommissionStatus(); ok {
+		if err := paymentorder.CustomReferralCommissionStatusValidator(v); err != nil {
+			return &ValidationError{Name: "custom_referral_commission_status", err: fmt.Errorf(`ent: validator failed for field "PaymentOrder.custom_referral_commission_status": %w`, err)}
+		}
 	}
 	if _, ok := _c.mutation.RechargeCode(); !ok {
 		return &ValidationError{Name: "recharge_code", err: errors.New(`ent: missing required field "PaymentOrder.recharge_code"`)}
@@ -724,6 +834,30 @@ func (_c *PaymentOrderCreate) createSpec() (*PaymentOrder, *sqlgraph.CreateSpec)
 	if value, ok := _c.mutation.FeeRate(); ok {
 		_spec.SetField(paymentorder.FieldFeeRate, field.TypeFloat64, value)
 		_node.FeeRate = value
+	}
+	if value, ok := _c.mutation.CommissionBaseAmount(); ok {
+		_spec.SetField(paymentorder.FieldCommissionBaseAmount, field.TypeFloat64, value)
+		_node.CommissionBaseAmount = value
+	}
+	if value, ok := _c.mutation.CustomReferralAffiliateID(); ok {
+		_spec.SetField(paymentorder.FieldCustomReferralAffiliateID, field.TypeInt64, value)
+		_node.CustomReferralAffiliateID = &value
+	}
+	if value, ok := _c.mutation.CustomReferralRate(); ok {
+		_spec.SetField(paymentorder.FieldCustomReferralRate, field.TypeFloat64, value)
+		_node.CustomReferralRate = value
+	}
+	if value, ok := _c.mutation.CustomReferralCommissionStatus(); ok {
+		_spec.SetField(paymentorder.FieldCustomReferralCommissionStatus, field.TypeString, value)
+		_node.CustomReferralCommissionStatus = value
+	}
+	if value, ok := _c.mutation.CustomReferralCommissionError(); ok {
+		_spec.SetField(paymentorder.FieldCustomReferralCommissionError, field.TypeString, value)
+		_node.CustomReferralCommissionError = &value
+	}
+	if value, ok := _c.mutation.CustomReferralCommissionAt(); ok {
+		_spec.SetField(paymentorder.FieldCustomReferralCommissionAt, field.TypeTime, value)
+		_node.CustomReferralCommissionAt = &value
 	}
 	if value, ok := _c.mutation.RechargeCode(); ok {
 		_spec.SetField(paymentorder.FieldRechargeCode, field.TypeString, value)
@@ -1027,6 +1161,114 @@ func (u *PaymentOrderUpsert) UpdateFeeRate() *PaymentOrderUpsert {
 // AddFeeRate adds v to the "fee_rate" field.
 func (u *PaymentOrderUpsert) AddFeeRate(v float64) *PaymentOrderUpsert {
 	u.Add(paymentorder.FieldFeeRate, v)
+	return u
+}
+
+// SetCommissionBaseAmount sets the "commission_base_amount" field.
+func (u *PaymentOrderUpsert) SetCommissionBaseAmount(v float64) *PaymentOrderUpsert {
+	u.Set(paymentorder.FieldCommissionBaseAmount, v)
+	return u
+}
+
+// UpdateCommissionBaseAmount sets the "commission_base_amount" field to the value that was provided on create.
+func (u *PaymentOrderUpsert) UpdateCommissionBaseAmount() *PaymentOrderUpsert {
+	u.SetExcluded(paymentorder.FieldCommissionBaseAmount)
+	return u
+}
+
+// AddCommissionBaseAmount adds v to the "commission_base_amount" field.
+func (u *PaymentOrderUpsert) AddCommissionBaseAmount(v float64) *PaymentOrderUpsert {
+	u.Add(paymentorder.FieldCommissionBaseAmount, v)
+	return u
+}
+
+// SetCustomReferralAffiliateID sets the "custom_referral_affiliate_id" field.
+func (u *PaymentOrderUpsert) SetCustomReferralAffiliateID(v int64) *PaymentOrderUpsert {
+	u.Set(paymentorder.FieldCustomReferralAffiliateID, v)
+	return u
+}
+
+// UpdateCustomReferralAffiliateID sets the "custom_referral_affiliate_id" field to the value that was provided on create.
+func (u *PaymentOrderUpsert) UpdateCustomReferralAffiliateID() *PaymentOrderUpsert {
+	u.SetExcluded(paymentorder.FieldCustomReferralAffiliateID)
+	return u
+}
+
+// AddCustomReferralAffiliateID adds v to the "custom_referral_affiliate_id" field.
+func (u *PaymentOrderUpsert) AddCustomReferralAffiliateID(v int64) *PaymentOrderUpsert {
+	u.Add(paymentorder.FieldCustomReferralAffiliateID, v)
+	return u
+}
+
+// ClearCustomReferralAffiliateID clears the value of the "custom_referral_affiliate_id" field.
+func (u *PaymentOrderUpsert) ClearCustomReferralAffiliateID() *PaymentOrderUpsert {
+	u.SetNull(paymentorder.FieldCustomReferralAffiliateID)
+	return u
+}
+
+// SetCustomReferralRate sets the "custom_referral_rate" field.
+func (u *PaymentOrderUpsert) SetCustomReferralRate(v float64) *PaymentOrderUpsert {
+	u.Set(paymentorder.FieldCustomReferralRate, v)
+	return u
+}
+
+// UpdateCustomReferralRate sets the "custom_referral_rate" field to the value that was provided on create.
+func (u *PaymentOrderUpsert) UpdateCustomReferralRate() *PaymentOrderUpsert {
+	u.SetExcluded(paymentorder.FieldCustomReferralRate)
+	return u
+}
+
+// AddCustomReferralRate adds v to the "custom_referral_rate" field.
+func (u *PaymentOrderUpsert) AddCustomReferralRate(v float64) *PaymentOrderUpsert {
+	u.Add(paymentorder.FieldCustomReferralRate, v)
+	return u
+}
+
+// SetCustomReferralCommissionStatus sets the "custom_referral_commission_status" field.
+func (u *PaymentOrderUpsert) SetCustomReferralCommissionStatus(v string) *PaymentOrderUpsert {
+	u.Set(paymentorder.FieldCustomReferralCommissionStatus, v)
+	return u
+}
+
+// UpdateCustomReferralCommissionStatus sets the "custom_referral_commission_status" field to the value that was provided on create.
+func (u *PaymentOrderUpsert) UpdateCustomReferralCommissionStatus() *PaymentOrderUpsert {
+	u.SetExcluded(paymentorder.FieldCustomReferralCommissionStatus)
+	return u
+}
+
+// SetCustomReferralCommissionError sets the "custom_referral_commission_error" field.
+func (u *PaymentOrderUpsert) SetCustomReferralCommissionError(v string) *PaymentOrderUpsert {
+	u.Set(paymentorder.FieldCustomReferralCommissionError, v)
+	return u
+}
+
+// UpdateCustomReferralCommissionError sets the "custom_referral_commission_error" field to the value that was provided on create.
+func (u *PaymentOrderUpsert) UpdateCustomReferralCommissionError() *PaymentOrderUpsert {
+	u.SetExcluded(paymentorder.FieldCustomReferralCommissionError)
+	return u
+}
+
+// ClearCustomReferralCommissionError clears the value of the "custom_referral_commission_error" field.
+func (u *PaymentOrderUpsert) ClearCustomReferralCommissionError() *PaymentOrderUpsert {
+	u.SetNull(paymentorder.FieldCustomReferralCommissionError)
+	return u
+}
+
+// SetCustomReferralCommissionAt sets the "custom_referral_commission_at" field.
+func (u *PaymentOrderUpsert) SetCustomReferralCommissionAt(v time.Time) *PaymentOrderUpsert {
+	u.Set(paymentorder.FieldCustomReferralCommissionAt, v)
+	return u
+}
+
+// UpdateCustomReferralCommissionAt sets the "custom_referral_commission_at" field to the value that was provided on create.
+func (u *PaymentOrderUpsert) UpdateCustomReferralCommissionAt() *PaymentOrderUpsert {
+	u.SetExcluded(paymentorder.FieldCustomReferralCommissionAt)
+	return u
+}
+
+// ClearCustomReferralCommissionAt clears the value of the "custom_referral_commission_at" field.
+func (u *PaymentOrderUpsert) ClearCustomReferralCommissionAt() *PaymentOrderUpsert {
+	u.SetNull(paymentorder.FieldCustomReferralCommissionAt)
 	return u
 }
 
@@ -1708,6 +1950,132 @@ func (u *PaymentOrderUpsertOne) AddFeeRate(v float64) *PaymentOrderUpsertOne {
 func (u *PaymentOrderUpsertOne) UpdateFeeRate() *PaymentOrderUpsertOne {
 	return u.Update(func(s *PaymentOrderUpsert) {
 		s.UpdateFeeRate()
+	})
+}
+
+// SetCommissionBaseAmount sets the "commission_base_amount" field.
+func (u *PaymentOrderUpsertOne) SetCommissionBaseAmount(v float64) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetCommissionBaseAmount(v)
+	})
+}
+
+// AddCommissionBaseAmount adds v to the "commission_base_amount" field.
+func (u *PaymentOrderUpsertOne) AddCommissionBaseAmount(v float64) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.AddCommissionBaseAmount(v)
+	})
+}
+
+// UpdateCommissionBaseAmount sets the "commission_base_amount" field to the value that was provided on create.
+func (u *PaymentOrderUpsertOne) UpdateCommissionBaseAmount() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateCommissionBaseAmount()
+	})
+}
+
+// SetCustomReferralAffiliateID sets the "custom_referral_affiliate_id" field.
+func (u *PaymentOrderUpsertOne) SetCustomReferralAffiliateID(v int64) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetCustomReferralAffiliateID(v)
+	})
+}
+
+// AddCustomReferralAffiliateID adds v to the "custom_referral_affiliate_id" field.
+func (u *PaymentOrderUpsertOne) AddCustomReferralAffiliateID(v int64) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.AddCustomReferralAffiliateID(v)
+	})
+}
+
+// UpdateCustomReferralAffiliateID sets the "custom_referral_affiliate_id" field to the value that was provided on create.
+func (u *PaymentOrderUpsertOne) UpdateCustomReferralAffiliateID() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateCustomReferralAffiliateID()
+	})
+}
+
+// ClearCustomReferralAffiliateID clears the value of the "custom_referral_affiliate_id" field.
+func (u *PaymentOrderUpsertOne) ClearCustomReferralAffiliateID() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearCustomReferralAffiliateID()
+	})
+}
+
+// SetCustomReferralRate sets the "custom_referral_rate" field.
+func (u *PaymentOrderUpsertOne) SetCustomReferralRate(v float64) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetCustomReferralRate(v)
+	})
+}
+
+// AddCustomReferralRate adds v to the "custom_referral_rate" field.
+func (u *PaymentOrderUpsertOne) AddCustomReferralRate(v float64) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.AddCustomReferralRate(v)
+	})
+}
+
+// UpdateCustomReferralRate sets the "custom_referral_rate" field to the value that was provided on create.
+func (u *PaymentOrderUpsertOne) UpdateCustomReferralRate() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateCustomReferralRate()
+	})
+}
+
+// SetCustomReferralCommissionStatus sets the "custom_referral_commission_status" field.
+func (u *PaymentOrderUpsertOne) SetCustomReferralCommissionStatus(v string) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetCustomReferralCommissionStatus(v)
+	})
+}
+
+// UpdateCustomReferralCommissionStatus sets the "custom_referral_commission_status" field to the value that was provided on create.
+func (u *PaymentOrderUpsertOne) UpdateCustomReferralCommissionStatus() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateCustomReferralCommissionStatus()
+	})
+}
+
+// SetCustomReferralCommissionError sets the "custom_referral_commission_error" field.
+func (u *PaymentOrderUpsertOne) SetCustomReferralCommissionError(v string) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetCustomReferralCommissionError(v)
+	})
+}
+
+// UpdateCustomReferralCommissionError sets the "custom_referral_commission_error" field to the value that was provided on create.
+func (u *PaymentOrderUpsertOne) UpdateCustomReferralCommissionError() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateCustomReferralCommissionError()
+	})
+}
+
+// ClearCustomReferralCommissionError clears the value of the "custom_referral_commission_error" field.
+func (u *PaymentOrderUpsertOne) ClearCustomReferralCommissionError() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearCustomReferralCommissionError()
+	})
+}
+
+// SetCustomReferralCommissionAt sets the "custom_referral_commission_at" field.
+func (u *PaymentOrderUpsertOne) SetCustomReferralCommissionAt(v time.Time) *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetCustomReferralCommissionAt(v)
+	})
+}
+
+// UpdateCustomReferralCommissionAt sets the "custom_referral_commission_at" field to the value that was provided on create.
+func (u *PaymentOrderUpsertOne) UpdateCustomReferralCommissionAt() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateCustomReferralCommissionAt()
+	})
+}
+
+// ClearCustomReferralCommissionAt clears the value of the "custom_referral_commission_at" field.
+func (u *PaymentOrderUpsertOne) ClearCustomReferralCommissionAt() *PaymentOrderUpsertOne {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearCustomReferralCommissionAt()
 	})
 }
 
@@ -2640,6 +3008,132 @@ func (u *PaymentOrderUpsertBulk) AddFeeRate(v float64) *PaymentOrderUpsertBulk {
 func (u *PaymentOrderUpsertBulk) UpdateFeeRate() *PaymentOrderUpsertBulk {
 	return u.Update(func(s *PaymentOrderUpsert) {
 		s.UpdateFeeRate()
+	})
+}
+
+// SetCommissionBaseAmount sets the "commission_base_amount" field.
+func (u *PaymentOrderUpsertBulk) SetCommissionBaseAmount(v float64) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetCommissionBaseAmount(v)
+	})
+}
+
+// AddCommissionBaseAmount adds v to the "commission_base_amount" field.
+func (u *PaymentOrderUpsertBulk) AddCommissionBaseAmount(v float64) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.AddCommissionBaseAmount(v)
+	})
+}
+
+// UpdateCommissionBaseAmount sets the "commission_base_amount" field to the value that was provided on create.
+func (u *PaymentOrderUpsertBulk) UpdateCommissionBaseAmount() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateCommissionBaseAmount()
+	})
+}
+
+// SetCustomReferralAffiliateID sets the "custom_referral_affiliate_id" field.
+func (u *PaymentOrderUpsertBulk) SetCustomReferralAffiliateID(v int64) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetCustomReferralAffiliateID(v)
+	})
+}
+
+// AddCustomReferralAffiliateID adds v to the "custom_referral_affiliate_id" field.
+func (u *PaymentOrderUpsertBulk) AddCustomReferralAffiliateID(v int64) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.AddCustomReferralAffiliateID(v)
+	})
+}
+
+// UpdateCustomReferralAffiliateID sets the "custom_referral_affiliate_id" field to the value that was provided on create.
+func (u *PaymentOrderUpsertBulk) UpdateCustomReferralAffiliateID() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateCustomReferralAffiliateID()
+	})
+}
+
+// ClearCustomReferralAffiliateID clears the value of the "custom_referral_affiliate_id" field.
+func (u *PaymentOrderUpsertBulk) ClearCustomReferralAffiliateID() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearCustomReferralAffiliateID()
+	})
+}
+
+// SetCustomReferralRate sets the "custom_referral_rate" field.
+func (u *PaymentOrderUpsertBulk) SetCustomReferralRate(v float64) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetCustomReferralRate(v)
+	})
+}
+
+// AddCustomReferralRate adds v to the "custom_referral_rate" field.
+func (u *PaymentOrderUpsertBulk) AddCustomReferralRate(v float64) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.AddCustomReferralRate(v)
+	})
+}
+
+// UpdateCustomReferralRate sets the "custom_referral_rate" field to the value that was provided on create.
+func (u *PaymentOrderUpsertBulk) UpdateCustomReferralRate() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateCustomReferralRate()
+	})
+}
+
+// SetCustomReferralCommissionStatus sets the "custom_referral_commission_status" field.
+func (u *PaymentOrderUpsertBulk) SetCustomReferralCommissionStatus(v string) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetCustomReferralCommissionStatus(v)
+	})
+}
+
+// UpdateCustomReferralCommissionStatus sets the "custom_referral_commission_status" field to the value that was provided on create.
+func (u *PaymentOrderUpsertBulk) UpdateCustomReferralCommissionStatus() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateCustomReferralCommissionStatus()
+	})
+}
+
+// SetCustomReferralCommissionError sets the "custom_referral_commission_error" field.
+func (u *PaymentOrderUpsertBulk) SetCustomReferralCommissionError(v string) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetCustomReferralCommissionError(v)
+	})
+}
+
+// UpdateCustomReferralCommissionError sets the "custom_referral_commission_error" field to the value that was provided on create.
+func (u *PaymentOrderUpsertBulk) UpdateCustomReferralCommissionError() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateCustomReferralCommissionError()
+	})
+}
+
+// ClearCustomReferralCommissionError clears the value of the "custom_referral_commission_error" field.
+func (u *PaymentOrderUpsertBulk) ClearCustomReferralCommissionError() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearCustomReferralCommissionError()
+	})
+}
+
+// SetCustomReferralCommissionAt sets the "custom_referral_commission_at" field.
+func (u *PaymentOrderUpsertBulk) SetCustomReferralCommissionAt(v time.Time) *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.SetCustomReferralCommissionAt(v)
+	})
+}
+
+// UpdateCustomReferralCommissionAt sets the "custom_referral_commission_at" field to the value that was provided on create.
+func (u *PaymentOrderUpsertBulk) UpdateCustomReferralCommissionAt() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.UpdateCustomReferralCommissionAt()
+	})
+}
+
+// ClearCustomReferralCommissionAt clears the value of the "custom_referral_commission_at" field.
+func (u *PaymentOrderUpsertBulk) ClearCustomReferralCommissionAt() *PaymentOrderUpsertBulk {
+	return u.Update(func(s *PaymentOrderUpsert) {
+		s.ClearCustomReferralCommissionAt()
 	})
 }
 

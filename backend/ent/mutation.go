@@ -20130,60 +20130,69 @@ func (m *PaymentAuditLogMutation) ResetEdge(name string) error {
 // PaymentOrderMutation represents an operation that mutates the PaymentOrder nodes in the graph.
 type PaymentOrderMutation struct {
 	config
-	op                       Op
-	typ                      string
-	id                       *int64
-	user_email               *string
-	user_name                *string
-	user_notes               *string
-	amount                   *float64
-	addamount                *float64
-	pay_amount               *float64
-	addpay_amount            *float64
-	fee_rate                 *float64
-	addfee_rate              *float64
-	recharge_code            *string
-	out_trade_no             *string
-	payment_type             *string
-	payment_trade_no         *string
-	pay_url                  *string
-	qr_code                  *string
-	qr_code_img              *string
-	order_type               *string
-	plan_id                  *int64
-	addplan_id               *int64
-	subscription_group_id    *int64
-	addsubscription_group_id *int64
-	subscription_days        *int
-	addsubscription_days     *int
-	provider_instance_id     *string
-	provider_key             *string
-	provider_snapshot        *map[string]interface{}
-	status                   *string
-	refund_amount            *float64
-	addrefund_amount         *float64
-	refund_reason            *string
-	refund_at                *time.Time
-	force_refund             *bool
-	refund_requested_at      *time.Time
-	refund_request_reason    *string
-	refund_requested_by      *string
-	expires_at               *time.Time
-	paid_at                  *time.Time
-	completed_at             *time.Time
-	failed_at                *time.Time
-	failed_reason            *string
-	client_ip                *string
-	src_host                 *string
-	src_url                  *string
-	created_at               *time.Time
-	updated_at               *time.Time
-	clearedFields            map[string]struct{}
-	user                     *int64
-	cleareduser              bool
-	done                     bool
-	oldValue                 func(context.Context) (*PaymentOrder, error)
-	predicates               []predicate.PaymentOrder
+	op                                Op
+	typ                               string
+	id                                *int64
+	user_email                        *string
+	user_name                         *string
+	user_notes                        *string
+	amount                            *float64
+	addamount                         *float64
+	pay_amount                        *float64
+	addpay_amount                     *float64
+	fee_rate                          *float64
+	addfee_rate                       *float64
+	commission_base_amount            *float64
+	addcommission_base_amount         *float64
+	custom_referral_affiliate_id      *int64
+	addcustom_referral_affiliate_id   *int64
+	custom_referral_rate              *float64
+	addcustom_referral_rate           *float64
+	custom_referral_commission_status *string
+	custom_referral_commission_error  *string
+	custom_referral_commission_at     *time.Time
+	recharge_code                     *string
+	out_trade_no                      *string
+	payment_type                      *string
+	payment_trade_no                  *string
+	pay_url                           *string
+	qr_code                           *string
+	qr_code_img                       *string
+	order_type                        *string
+	plan_id                           *int64
+	addplan_id                        *int64
+	subscription_group_id             *int64
+	addsubscription_group_id          *int64
+	subscription_days                 *int
+	addsubscription_days              *int
+	provider_instance_id              *string
+	provider_key                      *string
+	provider_snapshot                 *map[string]interface{}
+	status                            *string
+	refund_amount                     *float64
+	addrefund_amount                  *float64
+	refund_reason                     *string
+	refund_at                         *time.Time
+	force_refund                      *bool
+	refund_requested_at               *time.Time
+	refund_request_reason             *string
+	refund_requested_by               *string
+	expires_at                        *time.Time
+	paid_at                           *time.Time
+	completed_at                      *time.Time
+	failed_at                         *time.Time
+	failed_reason                     *string
+	client_ip                         *string
+	src_host                          *string
+	src_url                           *string
+	created_at                        *time.Time
+	updated_at                        *time.Time
+	clearedFields                     map[string]struct{}
+	user                              *int64
+	cleareduser                       bool
+	done                              bool
+	oldValue                          func(context.Context) (*PaymentOrder, error)
+	predicates                        []predicate.PaymentOrder
 }
 
 var _ ent.Mutation = (*PaymentOrderMutation)(nil)
@@ -20607,6 +20616,322 @@ func (m *PaymentOrderMutation) AddedFeeRate() (r float64, exists bool) {
 func (m *PaymentOrderMutation) ResetFeeRate() {
 	m.fee_rate = nil
 	m.addfee_rate = nil
+}
+
+// SetCommissionBaseAmount sets the "commission_base_amount" field.
+func (m *PaymentOrderMutation) SetCommissionBaseAmount(f float64) {
+	m.commission_base_amount = &f
+	m.addcommission_base_amount = nil
+}
+
+// CommissionBaseAmount returns the value of the "commission_base_amount" field in the mutation.
+func (m *PaymentOrderMutation) CommissionBaseAmount() (r float64, exists bool) {
+	v := m.commission_base_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCommissionBaseAmount returns the old "commission_base_amount" field's value of the PaymentOrder entity.
+// If the PaymentOrder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentOrderMutation) OldCommissionBaseAmount(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCommissionBaseAmount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCommissionBaseAmount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCommissionBaseAmount: %w", err)
+	}
+	return oldValue.CommissionBaseAmount, nil
+}
+
+// AddCommissionBaseAmount adds f to the "commission_base_amount" field.
+func (m *PaymentOrderMutation) AddCommissionBaseAmount(f float64) {
+	if m.addcommission_base_amount != nil {
+		*m.addcommission_base_amount += f
+	} else {
+		m.addcommission_base_amount = &f
+	}
+}
+
+// AddedCommissionBaseAmount returns the value that was added to the "commission_base_amount" field in this mutation.
+func (m *PaymentOrderMutation) AddedCommissionBaseAmount() (r float64, exists bool) {
+	v := m.addcommission_base_amount
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCommissionBaseAmount resets all changes to the "commission_base_amount" field.
+func (m *PaymentOrderMutation) ResetCommissionBaseAmount() {
+	m.commission_base_amount = nil
+	m.addcommission_base_amount = nil
+}
+
+// SetCustomReferralAffiliateID sets the "custom_referral_affiliate_id" field.
+func (m *PaymentOrderMutation) SetCustomReferralAffiliateID(i int64) {
+	m.custom_referral_affiliate_id = &i
+	m.addcustom_referral_affiliate_id = nil
+}
+
+// CustomReferralAffiliateID returns the value of the "custom_referral_affiliate_id" field in the mutation.
+func (m *PaymentOrderMutation) CustomReferralAffiliateID() (r int64, exists bool) {
+	v := m.custom_referral_affiliate_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCustomReferralAffiliateID returns the old "custom_referral_affiliate_id" field's value of the PaymentOrder entity.
+// If the PaymentOrder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentOrderMutation) OldCustomReferralAffiliateID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCustomReferralAffiliateID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCustomReferralAffiliateID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCustomReferralAffiliateID: %w", err)
+	}
+	return oldValue.CustomReferralAffiliateID, nil
+}
+
+// AddCustomReferralAffiliateID adds i to the "custom_referral_affiliate_id" field.
+func (m *PaymentOrderMutation) AddCustomReferralAffiliateID(i int64) {
+	if m.addcustom_referral_affiliate_id != nil {
+		*m.addcustom_referral_affiliate_id += i
+	} else {
+		m.addcustom_referral_affiliate_id = &i
+	}
+}
+
+// AddedCustomReferralAffiliateID returns the value that was added to the "custom_referral_affiliate_id" field in this mutation.
+func (m *PaymentOrderMutation) AddedCustomReferralAffiliateID() (r int64, exists bool) {
+	v := m.addcustom_referral_affiliate_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearCustomReferralAffiliateID clears the value of the "custom_referral_affiliate_id" field.
+func (m *PaymentOrderMutation) ClearCustomReferralAffiliateID() {
+	m.custom_referral_affiliate_id = nil
+	m.addcustom_referral_affiliate_id = nil
+	m.clearedFields[paymentorder.FieldCustomReferralAffiliateID] = struct{}{}
+}
+
+// CustomReferralAffiliateIDCleared returns if the "custom_referral_affiliate_id" field was cleared in this mutation.
+func (m *PaymentOrderMutation) CustomReferralAffiliateIDCleared() bool {
+	_, ok := m.clearedFields[paymentorder.FieldCustomReferralAffiliateID]
+	return ok
+}
+
+// ResetCustomReferralAffiliateID resets all changes to the "custom_referral_affiliate_id" field.
+func (m *PaymentOrderMutation) ResetCustomReferralAffiliateID() {
+	m.custom_referral_affiliate_id = nil
+	m.addcustom_referral_affiliate_id = nil
+	delete(m.clearedFields, paymentorder.FieldCustomReferralAffiliateID)
+}
+
+// SetCustomReferralRate sets the "custom_referral_rate" field.
+func (m *PaymentOrderMutation) SetCustomReferralRate(f float64) {
+	m.custom_referral_rate = &f
+	m.addcustom_referral_rate = nil
+}
+
+// CustomReferralRate returns the value of the "custom_referral_rate" field in the mutation.
+func (m *PaymentOrderMutation) CustomReferralRate() (r float64, exists bool) {
+	v := m.custom_referral_rate
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCustomReferralRate returns the old "custom_referral_rate" field's value of the PaymentOrder entity.
+// If the PaymentOrder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentOrderMutation) OldCustomReferralRate(ctx context.Context) (v float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCustomReferralRate is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCustomReferralRate requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCustomReferralRate: %w", err)
+	}
+	return oldValue.CustomReferralRate, nil
+}
+
+// AddCustomReferralRate adds f to the "custom_referral_rate" field.
+func (m *PaymentOrderMutation) AddCustomReferralRate(f float64) {
+	if m.addcustom_referral_rate != nil {
+		*m.addcustom_referral_rate += f
+	} else {
+		m.addcustom_referral_rate = &f
+	}
+}
+
+// AddedCustomReferralRate returns the value that was added to the "custom_referral_rate" field in this mutation.
+func (m *PaymentOrderMutation) AddedCustomReferralRate() (r float64, exists bool) {
+	v := m.addcustom_referral_rate
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetCustomReferralRate resets all changes to the "custom_referral_rate" field.
+func (m *PaymentOrderMutation) ResetCustomReferralRate() {
+	m.custom_referral_rate = nil
+	m.addcustom_referral_rate = nil
+}
+
+// SetCustomReferralCommissionStatus sets the "custom_referral_commission_status" field.
+func (m *PaymentOrderMutation) SetCustomReferralCommissionStatus(s string) {
+	m.custom_referral_commission_status = &s
+}
+
+// CustomReferralCommissionStatus returns the value of the "custom_referral_commission_status" field in the mutation.
+func (m *PaymentOrderMutation) CustomReferralCommissionStatus() (r string, exists bool) {
+	v := m.custom_referral_commission_status
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCustomReferralCommissionStatus returns the old "custom_referral_commission_status" field's value of the PaymentOrder entity.
+// If the PaymentOrder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentOrderMutation) OldCustomReferralCommissionStatus(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCustomReferralCommissionStatus is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCustomReferralCommissionStatus requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCustomReferralCommissionStatus: %w", err)
+	}
+	return oldValue.CustomReferralCommissionStatus, nil
+}
+
+// ResetCustomReferralCommissionStatus resets all changes to the "custom_referral_commission_status" field.
+func (m *PaymentOrderMutation) ResetCustomReferralCommissionStatus() {
+	m.custom_referral_commission_status = nil
+}
+
+// SetCustomReferralCommissionError sets the "custom_referral_commission_error" field.
+func (m *PaymentOrderMutation) SetCustomReferralCommissionError(s string) {
+	m.custom_referral_commission_error = &s
+}
+
+// CustomReferralCommissionError returns the value of the "custom_referral_commission_error" field in the mutation.
+func (m *PaymentOrderMutation) CustomReferralCommissionError() (r string, exists bool) {
+	v := m.custom_referral_commission_error
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCustomReferralCommissionError returns the old "custom_referral_commission_error" field's value of the PaymentOrder entity.
+// If the PaymentOrder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentOrderMutation) OldCustomReferralCommissionError(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCustomReferralCommissionError is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCustomReferralCommissionError requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCustomReferralCommissionError: %w", err)
+	}
+	return oldValue.CustomReferralCommissionError, nil
+}
+
+// ClearCustomReferralCommissionError clears the value of the "custom_referral_commission_error" field.
+func (m *PaymentOrderMutation) ClearCustomReferralCommissionError() {
+	m.custom_referral_commission_error = nil
+	m.clearedFields[paymentorder.FieldCustomReferralCommissionError] = struct{}{}
+}
+
+// CustomReferralCommissionErrorCleared returns if the "custom_referral_commission_error" field was cleared in this mutation.
+func (m *PaymentOrderMutation) CustomReferralCommissionErrorCleared() bool {
+	_, ok := m.clearedFields[paymentorder.FieldCustomReferralCommissionError]
+	return ok
+}
+
+// ResetCustomReferralCommissionError resets all changes to the "custom_referral_commission_error" field.
+func (m *PaymentOrderMutation) ResetCustomReferralCommissionError() {
+	m.custom_referral_commission_error = nil
+	delete(m.clearedFields, paymentorder.FieldCustomReferralCommissionError)
+}
+
+// SetCustomReferralCommissionAt sets the "custom_referral_commission_at" field.
+func (m *PaymentOrderMutation) SetCustomReferralCommissionAt(t time.Time) {
+	m.custom_referral_commission_at = &t
+}
+
+// CustomReferralCommissionAt returns the value of the "custom_referral_commission_at" field in the mutation.
+func (m *PaymentOrderMutation) CustomReferralCommissionAt() (r time.Time, exists bool) {
+	v := m.custom_referral_commission_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCustomReferralCommissionAt returns the old "custom_referral_commission_at" field's value of the PaymentOrder entity.
+// If the PaymentOrder object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *PaymentOrderMutation) OldCustomReferralCommissionAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCustomReferralCommissionAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCustomReferralCommissionAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCustomReferralCommissionAt: %w", err)
+	}
+	return oldValue.CustomReferralCommissionAt, nil
+}
+
+// ClearCustomReferralCommissionAt clears the value of the "custom_referral_commission_at" field.
+func (m *PaymentOrderMutation) ClearCustomReferralCommissionAt() {
+	m.custom_referral_commission_at = nil
+	m.clearedFields[paymentorder.FieldCustomReferralCommissionAt] = struct{}{}
+}
+
+// CustomReferralCommissionAtCleared returns if the "custom_referral_commission_at" field was cleared in this mutation.
+func (m *PaymentOrderMutation) CustomReferralCommissionAtCleared() bool {
+	_, ok := m.clearedFields[paymentorder.FieldCustomReferralCommissionAt]
+	return ok
+}
+
+// ResetCustomReferralCommissionAt resets all changes to the "custom_referral_commission_at" field.
+func (m *PaymentOrderMutation) ResetCustomReferralCommissionAt() {
+	m.custom_referral_commission_at = nil
+	delete(m.clearedFields, paymentorder.FieldCustomReferralCommissionAt)
 }
 
 // SetRechargeCode sets the "recharge_code" field.
@@ -22152,7 +22477,7 @@ func (m *PaymentOrderMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *PaymentOrderMutation) Fields() []string {
-	fields := make([]string, 0, 39)
+	fields := make([]string, 0, 45)
 	if m.user != nil {
 		fields = append(fields, paymentorder.FieldUserID)
 	}
@@ -22173,6 +22498,24 @@ func (m *PaymentOrderMutation) Fields() []string {
 	}
 	if m.fee_rate != nil {
 		fields = append(fields, paymentorder.FieldFeeRate)
+	}
+	if m.commission_base_amount != nil {
+		fields = append(fields, paymentorder.FieldCommissionBaseAmount)
+	}
+	if m.custom_referral_affiliate_id != nil {
+		fields = append(fields, paymentorder.FieldCustomReferralAffiliateID)
+	}
+	if m.custom_referral_rate != nil {
+		fields = append(fields, paymentorder.FieldCustomReferralRate)
+	}
+	if m.custom_referral_commission_status != nil {
+		fields = append(fields, paymentorder.FieldCustomReferralCommissionStatus)
+	}
+	if m.custom_referral_commission_error != nil {
+		fields = append(fields, paymentorder.FieldCustomReferralCommissionError)
+	}
+	if m.custom_referral_commission_at != nil {
+		fields = append(fields, paymentorder.FieldCustomReferralCommissionAt)
 	}
 	if m.recharge_code != nil {
 		fields = append(fields, paymentorder.FieldRechargeCode)
@@ -22292,6 +22635,18 @@ func (m *PaymentOrderMutation) Field(name string) (ent.Value, bool) {
 		return m.PayAmount()
 	case paymentorder.FieldFeeRate:
 		return m.FeeRate()
+	case paymentorder.FieldCommissionBaseAmount:
+		return m.CommissionBaseAmount()
+	case paymentorder.FieldCustomReferralAffiliateID:
+		return m.CustomReferralAffiliateID()
+	case paymentorder.FieldCustomReferralRate:
+		return m.CustomReferralRate()
+	case paymentorder.FieldCustomReferralCommissionStatus:
+		return m.CustomReferralCommissionStatus()
+	case paymentorder.FieldCustomReferralCommissionError:
+		return m.CustomReferralCommissionError()
+	case paymentorder.FieldCustomReferralCommissionAt:
+		return m.CustomReferralCommissionAt()
 	case paymentorder.FieldRechargeCode:
 		return m.RechargeCode()
 	case paymentorder.FieldOutTradeNo:
@@ -22379,6 +22734,18 @@ func (m *PaymentOrderMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldPayAmount(ctx)
 	case paymentorder.FieldFeeRate:
 		return m.OldFeeRate(ctx)
+	case paymentorder.FieldCommissionBaseAmount:
+		return m.OldCommissionBaseAmount(ctx)
+	case paymentorder.FieldCustomReferralAffiliateID:
+		return m.OldCustomReferralAffiliateID(ctx)
+	case paymentorder.FieldCustomReferralRate:
+		return m.OldCustomReferralRate(ctx)
+	case paymentorder.FieldCustomReferralCommissionStatus:
+		return m.OldCustomReferralCommissionStatus(ctx)
+	case paymentorder.FieldCustomReferralCommissionError:
+		return m.OldCustomReferralCommissionError(ctx)
+	case paymentorder.FieldCustomReferralCommissionAt:
+		return m.OldCustomReferralCommissionAt(ctx)
 	case paymentorder.FieldRechargeCode:
 		return m.OldRechargeCode(ctx)
 	case paymentorder.FieldOutTradeNo:
@@ -22500,6 +22867,48 @@ func (m *PaymentOrderMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetFeeRate(v)
+		return nil
+	case paymentorder.FieldCommissionBaseAmount:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCommissionBaseAmount(v)
+		return nil
+	case paymentorder.FieldCustomReferralAffiliateID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCustomReferralAffiliateID(v)
+		return nil
+	case paymentorder.FieldCustomReferralRate:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCustomReferralRate(v)
+		return nil
+	case paymentorder.FieldCustomReferralCommissionStatus:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCustomReferralCommissionStatus(v)
+		return nil
+	case paymentorder.FieldCustomReferralCommissionError:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCustomReferralCommissionError(v)
+		return nil
+	case paymentorder.FieldCustomReferralCommissionAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCustomReferralCommissionAt(v)
 		return nil
 	case paymentorder.FieldRechargeCode:
 		v, ok := value.(string)
@@ -22742,6 +23151,15 @@ func (m *PaymentOrderMutation) AddedFields() []string {
 	if m.addfee_rate != nil {
 		fields = append(fields, paymentorder.FieldFeeRate)
 	}
+	if m.addcommission_base_amount != nil {
+		fields = append(fields, paymentorder.FieldCommissionBaseAmount)
+	}
+	if m.addcustom_referral_affiliate_id != nil {
+		fields = append(fields, paymentorder.FieldCustomReferralAffiliateID)
+	}
+	if m.addcustom_referral_rate != nil {
+		fields = append(fields, paymentorder.FieldCustomReferralRate)
+	}
 	if m.addplan_id != nil {
 		fields = append(fields, paymentorder.FieldPlanID)
 	}
@@ -22768,6 +23186,12 @@ func (m *PaymentOrderMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedPayAmount()
 	case paymentorder.FieldFeeRate:
 		return m.AddedFeeRate()
+	case paymentorder.FieldCommissionBaseAmount:
+		return m.AddedCommissionBaseAmount()
+	case paymentorder.FieldCustomReferralAffiliateID:
+		return m.AddedCustomReferralAffiliateID()
+	case paymentorder.FieldCustomReferralRate:
+		return m.AddedCustomReferralRate()
 	case paymentorder.FieldPlanID:
 		return m.AddedPlanID()
 	case paymentorder.FieldSubscriptionGroupID:
@@ -22805,6 +23229,27 @@ func (m *PaymentOrderMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddFeeRate(v)
+		return nil
+	case paymentorder.FieldCommissionBaseAmount:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCommissionBaseAmount(v)
+		return nil
+	case paymentorder.FieldCustomReferralAffiliateID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCustomReferralAffiliateID(v)
+		return nil
+	case paymentorder.FieldCustomReferralRate:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddCustomReferralRate(v)
 		return nil
 	case paymentorder.FieldPlanID:
 		v, ok := value.(int64)
@@ -22844,6 +23289,15 @@ func (m *PaymentOrderMutation) ClearedFields() []string {
 	var fields []string
 	if m.FieldCleared(paymentorder.FieldUserNotes) {
 		fields = append(fields, paymentorder.FieldUserNotes)
+	}
+	if m.FieldCleared(paymentorder.FieldCustomReferralAffiliateID) {
+		fields = append(fields, paymentorder.FieldCustomReferralAffiliateID)
+	}
+	if m.FieldCleared(paymentorder.FieldCustomReferralCommissionError) {
+		fields = append(fields, paymentorder.FieldCustomReferralCommissionError)
+	}
+	if m.FieldCleared(paymentorder.FieldCustomReferralCommissionAt) {
+		fields = append(fields, paymentorder.FieldCustomReferralCommissionAt)
 	}
 	if m.FieldCleared(paymentorder.FieldPayURL) {
 		fields = append(fields, paymentorder.FieldPayURL)
@@ -22918,6 +23372,15 @@ func (m *PaymentOrderMutation) ClearField(name string) error {
 	switch name {
 	case paymentorder.FieldUserNotes:
 		m.ClearUserNotes()
+		return nil
+	case paymentorder.FieldCustomReferralAffiliateID:
+		m.ClearCustomReferralAffiliateID()
+		return nil
+	case paymentorder.FieldCustomReferralCommissionError:
+		m.ClearCustomReferralCommissionError()
+		return nil
+	case paymentorder.FieldCustomReferralCommissionAt:
+		m.ClearCustomReferralCommissionAt()
 		return nil
 	case paymentorder.FieldPayURL:
 		m.ClearPayURL()
@@ -23004,6 +23467,24 @@ func (m *PaymentOrderMutation) ResetField(name string) error {
 		return nil
 	case paymentorder.FieldFeeRate:
 		m.ResetFeeRate()
+		return nil
+	case paymentorder.FieldCommissionBaseAmount:
+		m.ResetCommissionBaseAmount()
+		return nil
+	case paymentorder.FieldCustomReferralAffiliateID:
+		m.ResetCustomReferralAffiliateID()
+		return nil
+	case paymentorder.FieldCustomReferralRate:
+		m.ResetCustomReferralRate()
+		return nil
+	case paymentorder.FieldCustomReferralCommissionStatus:
+		m.ResetCustomReferralCommissionStatus()
+		return nil
+	case paymentorder.FieldCustomReferralCommissionError:
+		m.ResetCustomReferralCommissionError()
+		return nil
+	case paymentorder.FieldCustomReferralCommissionAt:
+		m.ResetCustomReferralCommissionAt()
 		return nil
 	case paymentorder.FieldRechargeCode:
 		m.ResetRechargeCode()
