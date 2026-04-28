@@ -73,6 +73,7 @@ var (
 	ErrCustomReferralWithdrawDisabled      = infraerrors.Forbidden("CUSTOM_REFERRAL_WITHDRAW_DISABLED", "withdrawal is disabled")
 	ErrCustomReferralWithdrawTooSmall      = infraerrors.BadRequest("CUSTOM_REFERRAL_WITHDRAW_TOO_SMALL", "withdrawal amount is below minimum")
 	ErrCustomReferralWithdrawInsufficient  = infraerrors.BadRequest("CUSTOM_REFERRAL_WITHDRAW_INSUFFICIENT", "insufficient available commission")
+	ErrCustomReferralOutstandingDebt       = infraerrors.BadRequest("CUSTOM_REFERRAL_OUTSTANDING_DEBT", "outstanding reversed commission debt must be cleared before withdrawal")
 	ErrCustomReferralWithdrawalNotFound    = infraerrors.NotFound("CUSTOM_REFERRAL_WITHDRAWAL_NOT_FOUND", "withdrawal not found")
 	ErrCustomReferralInvalidIdempotency    = infraerrors.BadRequest("CUSTOM_REFERRAL_INVALID_IDEMPOTENCY_KEY", "invalid idempotency key")
 	ErrCustomReferralCommissionNotFound    = infraerrors.NotFound("CUSTOM_REFERRAL_COMMISSION_NOT_FOUND", "commission not found")

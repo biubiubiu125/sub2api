@@ -64,7 +64,7 @@ func (r *referralHandlerRepo) RecordReferralClick(_ context.Context, _ int64, _ 
 	return nil
 }
 
-func TestCaptureReferralRedirectsWithQueryAndDoesNotSetCookie(t *testing.T) {
+func TestCaptureReferralRedirectsWithQueryAndSetsCookie(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &referralHandlerRepo{}
 	referralSvc := service.NewCustomReferralService(repo, referralHandlerSettingRepo{}, &config.Config{
@@ -89,8 +89,35 @@ func TestCaptureReferralRedirectsWithQueryAndDoesNotSetCookie(t *testing.T) {
 	if got := w.Header().Get("Location"); got != "/register?aff_code=ABC123" {
 		t.Fatalf("Location = %q", got)
 	}
-	if cookies := w.Header().Values("Set-Cookie"); len(cookies) != 0 {
-		t.Fatalf("CaptureReferral set cookies for landing request: %v", cookies)
+	var referralCookie *http.Cookie
+	for _, cookie := range w.Result().Cookies() {
+		if cookie.Name == service.CustomReferralCookieName {
+			referralCookie = cookie
+			break
+		}
+	}
+	if referralCookie == nil {
+		t.Fatalf("CaptureReferral did not set %s cookie", service.CustomReferralCookieName)
+	}
+	if !referralCookie.HttpOnly {
+		t.Fatalf("referral cookie should be HttpOnly")
+	}
+	if referralCookie.Path != "/" {
+		t.Fatalf("referral cookie Path = %q, want /", referralCookie.Path)
+	}
+	if referralCookie.MaxAge != 30*24*60*60 {
+		t.Fatalf("referral cookie MaxAge = %d", referralCookie.MaxAge)
+	}
+	decoded, err := decodeCookieValue(referralCookie.Value)
+	if err != nil {
+		t.Fatalf("cookie value is not encoded: %v", err)
+	}
+	code, err := referralSvc.ParseSignedCookieValue(context.Background(), decoded)
+	if err != nil {
+		t.Fatalf("signed cookie did not parse: %v", err)
+	}
+	if code != "ABC123" {
+		t.Fatalf("cookie code = %q, want ABC123", code)
 	}
 	if repo.click.IPHash == "" || repo.click.UserAgentHash == "" {
 		t.Fatalf("click risk hashes were not recorded: %+v", repo.click)

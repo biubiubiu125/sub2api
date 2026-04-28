@@ -3,6 +3,7 @@ package handler
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -61,10 +62,31 @@ func (h *ReferralHandler) CaptureReferral(c *gin.Context) {
 		},
 	)
 	if err == nil && landing != nil {
+		h.setReferralCookie(c, landing)
 		c.Redirect(http.StatusFound, referralRegisterRedirect(landing.RedirectPath, landing.Code))
 		return
 	}
 	c.Redirect(http.StatusFound, referralRegisterErrorRedirect())
+}
+
+func (h *ReferralHandler) setReferralCookie(c *gin.Context, landing *service.CustomReferralLanding) {
+	if h == nil || h.referralService == nil || c == nil || landing == nil || strings.TrimSpace(landing.Code) == "" {
+		return
+	}
+	signed, err := h.referralService.BuildSignedCookieValue(landing.Code, time.Now())
+	if err != nil {
+		slog.Warn("failed to sign custom referral cookie", "error", err)
+		return
+	}
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     service.CustomReferralCookieName,
+		Value:    encodeCookieValue(signed),
+		Path:     "/",
+		MaxAge:   landing.CookieTTLDays * 24 * 60 * 60,
+		HttpOnly: true,
+		Secure:   isRequestHTTPS(c),
+		SameSite: http.SameSiteLaxMode,
+	})
 }
 
 func (h *ReferralHandler) ServeAsset(c *gin.Context) {

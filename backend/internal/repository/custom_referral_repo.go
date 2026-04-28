@@ -1196,7 +1196,7 @@ INSERT INTO custom_commission_ledger (
 			affiliateID,
 			commissionID,
 			fmt.Sprintf("%d", refund.OrderID),
-			fmt.Sprintf("refund:%d:%0.8f", refund.OrderID, reverseAmount),
+			fmt.Sprintf("refund:%d:%s", refund.OrderID, nextRefundedDec.StringFixed(moneyx.ScaleCommission)),
 			pendingDecreaseDec.Neg().InexactFloat64(),
 			availableDecreaseDec.Neg().InexactFloat64(),
 			reverseAmount,
@@ -2607,7 +2607,8 @@ func (r *customReferralRepository) CreateWithdrawal(ctx context.Context, input s
 		}
 
 		accountRows, err := exec.QueryContext(txCtx, `
-SELECT available_amount::double precision
+SELECT available_amount::double precision,
+       debt_amount::double precision
 FROM custom_commission_accounts
 WHERE affiliate_id = $1
 FOR UPDATE`, affiliate.ID)
@@ -2615,14 +2616,18 @@ FOR UPDATE`, affiliate.ID)
 			return err
 		}
 		availableAmount := 0.0
+		debtAmount := 0.0
 		if accountRows.Next() {
-			if err := accountRows.Scan(&availableAmount); err != nil {
+			if err := accountRows.Scan(&availableAmount, &debtAmount); err != nil {
 				_ = accountRows.Close()
 				return err
 			}
 		}
 		if err := accountRows.Close(); err != nil {
 			return err
+		}
+		if moneyx.NonNegative(moneyx.Commission(debtAmount)).GreaterThan(moneyx.Commission(0)) {
+			return service.ErrCustomReferralOutstandingDebt
 		}
 		if key := strings.TrimSpace(input.IdempotencyKey); key != "" {
 			existingRows, err := exec.QueryContext(txCtx, `
@@ -2682,6 +2687,7 @@ FOR UPDATE`, affiliate.ID, service.CustomReferralCommissionStatusAvailable)
 			var commissionID int64
 			var available float64
 			if err := allocRows.Scan(&commissionID, &available); err != nil {
+				_ = allocRows.Close()
 				return err
 			}
 			availableDec := moneyx.Commission(available)
@@ -3009,6 +3015,27 @@ RETURNING affiliate_id, amount::double precision`,
 		}
 		if err := rows.Close(); err != nil {
 			return err
+		}
+		debtRows, err := exec.QueryContext(txCtx, `
+SELECT debt_amount::double precision
+FROM custom_commission_accounts
+WHERE affiliate_id = $1
+FOR UPDATE`, affiliateID)
+		if err != nil {
+			return err
+		}
+		debtAmount := 0.0
+		if debtRows.Next() {
+			if err := debtRows.Scan(&debtAmount); err != nil {
+				_ = debtRows.Close()
+				return err
+			}
+		}
+		if err := debtRows.Close(); err != nil {
+			return err
+		}
+		if moneyx.NonNegative(moneyx.Commission(debtAmount)).GreaterThan(moneyx.Commission(0)) {
+			return service.ErrCustomReferralOutstandingDebt
 		}
 		res, err := exec.ExecContext(txCtx, `
 UPDATE custom_commission_accounts
