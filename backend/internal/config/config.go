@@ -1093,8 +1093,24 @@ type DefaultConfig struct {
 }
 
 type RateLimitConfig struct {
-	OverloadCooldownMinutes int `mapstructure:"overload_cooldown_minutes"`  // 529过载冷却时间(分钟)
-	OAuth401CooldownMinutes int `mapstructure:"oauth_401_cooldown_minutes"` // OAuth 401临时不可调度冷却(分钟)
+	OverloadCooldownMinutes int                            `mapstructure:"overload_cooldown_minutes"`  // 529过载冷却时间(分钟)
+	OAuth401CooldownMinutes int                            `mapstructure:"oauth_401_cooldown_minutes"` // OAuth 401临时不可调度冷却(分钟)
+	Register                RegisterRateLimitConfig        `mapstructure:"register"`
+	ReferralLanding         ReferralLandingRateLimitConfig `mapstructure:"referral_landing"`
+}
+
+type RegisterRateLimitConfig struct {
+	Enabled                 bool `mapstructure:"enabled"`
+	PerIPPerMinute          int  `mapstructure:"per_ip_per_minute"`
+	PerEmailPerMinute       int  `mapstructure:"per_email_per_minute"`
+	PerEmailDomainPerMinute int  `mapstructure:"per_email_domain_per_minute"`
+	PerInviteCodePerMinute  int  `mapstructure:"per_invite_code_per_minute"`
+}
+
+type ReferralLandingRateLimitConfig struct {
+	Enabled                bool `mapstructure:"enabled"`
+	PerIPPerMinute         int  `mapstructure:"per_ip_per_minute"`
+	PerInviteCodePerMinute int  `mapstructure:"per_invite_code_per_minute"`
 }
 
 // APIKeyAuthCacheConfig API Key 认证缓存配置
@@ -1555,6 +1571,14 @@ func setDefaults() {
 	// RateLimit
 	viper.SetDefault("rate_limit.overload_cooldown_minutes", 10)
 	viper.SetDefault("rate_limit.oauth_401_cooldown_minutes", 10)
+	viper.SetDefault("rate_limit.register.enabled", true)
+	viper.SetDefault("rate_limit.register.per_ip_per_minute", 5)
+	viper.SetDefault("rate_limit.register.per_email_per_minute", 0)
+	viper.SetDefault("rate_limit.register.per_email_domain_per_minute", 0)
+	viper.SetDefault("rate_limit.register.per_invite_code_per_minute", 0)
+	viper.SetDefault("rate_limit.referral_landing.enabled", true)
+	viper.SetDefault("rate_limit.referral_landing.per_ip_per_minute", 60)
+	viper.SetDefault("rate_limit.referral_landing.per_invite_code_per_minute", 0)
 
 	// Pricing - 从 model-price-repo 同步模型定价和上下文窗口数据（固定到 commit，避免分支漂移）
 	viper.SetDefault("pricing.remote_url", "https://raw.githubusercontent.com/Wei-Shaw/model-price-repo/main/model_prices_and_context_window.json")
@@ -2460,6 +2484,24 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.ModelsListCacheTTLSeconds < 10 || c.Gateway.ModelsListCacheTTLSeconds > 30 {
 		return fmt.Errorf("gateway.models_list_cache_ttl_seconds must be between 10-30")
+	}
+	if c.RateLimit.Register.PerIPPerMinute < 0 {
+		return fmt.Errorf("rate_limit.register.per_ip_per_minute must be non-negative")
+	}
+	if c.RateLimit.Register.PerEmailPerMinute < 0 {
+		return fmt.Errorf("rate_limit.register.per_email_per_minute must be non-negative")
+	}
+	if c.RateLimit.Register.PerEmailDomainPerMinute < 0 {
+		return fmt.Errorf("rate_limit.register.per_email_domain_per_minute must be non-negative")
+	}
+	if c.RateLimit.Register.PerInviteCodePerMinute < 0 {
+		return fmt.Errorf("rate_limit.register.per_invite_code_per_minute must be non-negative")
+	}
+	if c.RateLimit.ReferralLanding.PerIPPerMinute < 0 {
+		return fmt.Errorf("rate_limit.referral_landing.per_ip_per_minute must be non-negative")
+	}
+	if c.RateLimit.ReferralLanding.PerInviteCodePerMinute < 0 {
+		return fmt.Errorf("rate_limit.referral_landing.per_invite_code_per_minute must be non-negative")
 	}
 	if c.Gateway.Scheduling.StickySessionMaxWaiting <= 0 {
 		return fmt.Errorf("gateway.scheduling.sticky_session_max_waiting must be positive")

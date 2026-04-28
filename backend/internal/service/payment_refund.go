@@ -1,9 +1,9 @@
 package service
 
 import (
+	"context"
 	"crypto/sha1"
 	"encoding/hex"
-	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -235,6 +235,11 @@ func (s *PaymentService) prepareRefundEnabled(ctx context.Context, oid int64, am
 		return nil, nil, infraerrors.BadRequest("INVALID_AMOUNT", "invalid refund amount")
 	}
 	existingRefundAmount := moneyx.NonNegative(moneyx.Currency(o.RefundAmount)).InexactFloat64()
+	if o.Status == OrderStatusRefundRequested && o.RefundRequestedAt != nil && o.RefundAt == nil {
+		// REFUND_REQUESTED stores the user's requested amount in refund_amount so
+		// the admin UI can prefill it, but it is not an executed refund yet.
+		existingRefundAmount = 0
+	}
 	remainingRefundAmount := moneyx.Currency(o.Amount).Sub(moneyx.Currency(existingRefundAmount)).InexactFloat64()
 	if remainingRefundAmount <= 0 {
 		return nil, nil, infraerrors.BadRequest("REFUND_AMOUNT_EXCEEDED", "refund amount exceeds recharge")

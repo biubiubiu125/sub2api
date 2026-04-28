@@ -196,6 +196,65 @@ func TestPrepareRefundAllowsAdditionalPartialRefund(t *testing.T) {
 	require.Equal(t, 7.0, refreshed.RefundAmount)
 }
 
+func TestPrepareRefundTreatsRefundRequestedAmountAsRequestedNotExecuted(t *testing.T) {
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+
+	user, err := client.User.Create().
+		SetEmail("refund-requested@example.com").
+		SetPasswordHash("hash").
+		SetUsername("refund-requested-user").
+		Save(ctx)
+	require.NoError(t, err)
+
+	inst, err := client.PaymentProviderInstance.Create().
+		SetProviderKey(payment.TypeAlipay).
+		SetName("alipay-refund-requested-instance").
+		SetConfig("{}").
+		SetSupportedTypes("alipay").
+		SetEnabled(true).
+		SetRefundEnabled(true).
+		Save(ctx)
+	require.NoError(t, err)
+
+	instID := strconv.FormatInt(inst.ID, 10)
+	requestedAt := time.Now()
+	order, err := client.PaymentOrder.Create().
+		SetUserID(user.ID).
+		SetUserEmail(user.Email).
+		SetUserName(user.Username).
+		SetAmount(1000).
+		SetPayAmount(1000).
+		SetFeeRate(0).
+		SetRechargeCode("REFUND-REQUESTED-ORDER").
+		SetOutTradeNo("sub2_refund_requested_order").
+		SetPaymentType(payment.TypeAlipay).
+		SetPaymentTradeNo("trade-refund-requested").
+		SetOrderType(payment.OrderTypeBalance).
+		SetStatus(OrderStatusRefundRequested).
+		SetRefundAmount(1000).
+		SetRefundRequestReason("user requested full refund").
+		SetRefundRequestedAt(requestedAt).
+		SetRefundRequestedBy("42").
+		SetExpiresAt(time.Now().Add(time.Hour)).
+		SetPaidAt(time.Now()).
+		SetCompletedAt(time.Now()).
+		SetClientIP("127.0.0.1").
+		SetSrcHost("api.example.com").
+		SetProviderInstanceID(instID).
+		SetProviderKey(payment.TypeAlipay).
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc := &PaymentService{entClient: client}
+	plan, result, err := svc.PrepareRefund(ctx, order.ID, 400, "partial-after-request", false, false)
+	require.NoError(t, err)
+	require.Nil(t, result)
+	require.NotNil(t, plan)
+	require.Equal(t, 400.0, plan.RefundAmount)
+	require.Equal(t, 400.0, plan.TotalRefundAmount)
+}
+
 func TestMarkRefundOkCreatesDistinctAuditLogsForPartialRefunds(t *testing.T) {
 	ctx := context.Background()
 	client := newPaymentConfigServiceTestClient(t)

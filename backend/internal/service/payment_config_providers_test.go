@@ -283,6 +283,55 @@ func TestUpdateProviderInstanceAllowsEnablingVisibleMethodProviderFromDifferentS
 	require.NoError(t, err)
 }
 
+func TestGetUserRefundEligibleInstanceIDsReturnsEnabledAllowedProviders(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	client := newPaymentConfigServiceTestClient(t)
+	svc := &PaymentConfigService{
+		entClient:     client,
+		encryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+	}
+
+	first, err := svc.CreateProviderInstance(ctx, CreateProviderInstanceRequest{
+		ProviderKey: payment.TypeEasyPay,
+		Name:        "EasyPay Refund",
+		Config: map[string]string{
+			"pid":       "refund-1001",
+			"pkey":      "refund-pkey-1001",
+			"apiBase":   "https://pay.example.com",
+			"notifyUrl": "https://merchant.example.com/notify",
+			"returnUrl": "https://merchant.example.com/return",
+		},
+		SupportedTypes:  []string{payment.TypeAlipay},
+		Enabled:         true,
+		RefundEnabled:   true,
+		AllowUserRefund: true,
+	})
+	require.NoError(t, err)
+
+	_, err = svc.CreateProviderInstance(ctx, CreateProviderInstanceRequest{
+		ProviderKey: payment.TypeEasyPay,
+		Name:        "EasyPay Refund Disabled",
+		Config: map[string]string{
+			"pid":       "refund-1002",
+			"pkey":      "refund-pkey-1002",
+			"apiBase":   "https://pay.example.com",
+			"notifyUrl": "https://merchant.example.com/notify",
+			"returnUrl": "https://merchant.example.com/return",
+		},
+		SupportedTypes:  []string{payment.TypeAlipay},
+		Enabled:         true,
+		RefundEnabled:   false,
+		AllowUserRefund: true,
+	})
+	require.NoError(t, err)
+
+	ids, err := svc.GetUserRefundEligibleInstanceIDs(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{strconv.FormatInt(first.ID, 10)}, ids)
+}
+
 func TestUpdateProviderInstancePersistsEnabledAndSupportedTypes(t *testing.T) {
 	t.Parallel()
 
