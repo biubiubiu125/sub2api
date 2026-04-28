@@ -27,6 +27,10 @@ services:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
+      args:
+        VERSION: ${BUILD_VERSION:-}
+        COMMIT: ${BUILD_COMMIT:-docker}
+        DATE: ${BUILD_DATE:-}
     image: weishaw/sub2api:latest
     container_name: sub2api
     restart: unless-stopped
