@@ -24,18 +24,42 @@ func calculateCreditedBalance(paymentAmount, multiplier float64) float64 {
 }
 
 func calculateGatewayRefundAmount(orderAmount, payAmount, refundAmount float64) float64 {
-	if orderAmount <= 0 || payAmount <= 0 || refundAmount <= 0 {
+	refundablePayAmount := refundableOrderPayAmount(orderAmount, payAmount)
+	if refundablePayAmount <= 0 || refundAmount <= 0 {
+		return 0
+	}
+	refundAmountDec := moneyx.Currency(refundAmount)
+	refundablePayAmountDec := moneyx.Currency(refundablePayAmount)
+	if refundAmountDec.GreaterThanOrEqual(refundablePayAmountDec) {
+		return refundablePayAmountDec.InexactFloat64()
+	}
+	return refundAmountDec.InexactFloat64()
+}
+
+func refundableOrderPayAmount(orderAmount, payAmount float64) float64 {
+	if payAmount > 0 {
+		return moneyx.Currency(payAmount).InexactFloat64()
+	}
+	if orderAmount > 0 {
+		return moneyx.Currency(orderAmount).InexactFloat64()
+	}
+	return 0
+}
+
+func calculateBalanceDeductionAmount(orderAmount, payAmount, refundAmount float64) float64 {
+	refundablePayAmount := refundableOrderPayAmount(orderAmount, payAmount)
+	if orderAmount <= 0 || refundablePayAmount <= 0 || refundAmount <= 0 {
 		return 0
 	}
 	orderAmountDec := moneyx.Currency(orderAmount)
-	payAmountDec := moneyx.Currency(payAmount)
 	refundAmountDec := moneyx.Currency(refundAmount)
-	if orderAmountDec.Equal(refundAmountDec) {
-		return payAmountDec.InexactFloat64()
+	refundablePayAmountDec := moneyx.Currency(refundablePayAmount)
+	if refundAmountDec.GreaterThanOrEqual(refundablePayAmountDec) {
+		return orderAmountDec.InexactFloat64()
 	}
-	return payAmountDec.
+	return orderAmountDec.
 		Mul(refundAmountDec).
-		Div(orderAmountDec).
+		Div(refundablePayAmountDec).
 		Round(2).
 		InexactFloat64()
 }

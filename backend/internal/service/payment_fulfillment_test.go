@@ -409,10 +409,10 @@ func TestCustomReferralCommissionBaseSnapshotUsesDiscountedPayableAmount(t *test
 	}, nil, 79.9))
 }
 
-func TestCustomReferralRefundBaseAmountUsesCommissionSnapshotProportion(t *testing.T) {
+func TestCustomReferralRefundBaseAmountUsesPaidAmountProportion(t *testing.T) {
 	t.Parallel()
 
 	order := &dbent.PaymentOrder{Amount: 200, PayAmount: 210, CommissionBaseAmount: 100}
-	assert.Equal(t, 50.0, customReferralRefundBaseAmount(order, 100, 999))
-	assert.Equal(t, 100.0, customReferralRefundBaseAmount(order, 200, 999))
+	assert.Equal(t, 47.62, customReferralRefundBaseAmount(order, 100, 999))
+	assert.Equal(t, 95.24, customReferralRefundBaseAmount(order, 200, 999))
 }

@@ -163,13 +163,14 @@ func (s *PaymentService) requestRefundEnabled(ctx context.Context, oid, uid int6
 	if err != nil {
 		return fmt.Errorf("get user: %w", err)
 	}
-	if u.Balance < o.Amount {
+	requiredBalanceDeduction := calculateBalanceDeductionAmount(o.Amount, o.PayAmount, refundableOrderPayAmount(o.Amount, o.PayAmount))
+	if moneyx.Currency(u.Balance).LessThan(moneyx.Currency(requiredBalanceDeduction)) {
 		return infraerrors.BadRequest("BALANCE_NOT_ENOUGH", "refund amount exceeds balance")
 	}
 	nr := strings.TrimSpace(reason)
 	now := time.Now()
 	by := fmt.Sprintf("%d", uid)
-	c, err := s.entClient.PaymentOrder.Update().Where(paymentorder.IDEQ(oid), paymentorder.UserIDEQ(uid), paymentorder.StatusEQ(OrderStatusCompleted), paymentorder.OrderTypeEQ(payment.OrderTypeBalance)).SetStatus(OrderStatusRefundRequested).SetRefundRequestedAt(now).SetRefundRequestReason(nr).SetRefundRequestedBy(by).SetRefundAmount(o.Amount).Save(ctx)
+	c, err := s.entClient.PaymentOrder.Update().Where(paymentorder.IDEQ(oid), paymentorder.UserIDEQ(uid), paymentorder.StatusEQ(OrderStatusCompleted), paymentorder.OrderTypeEQ(payment.OrderTypeBalance)).SetStatus(OrderStatusRefundRequested).SetRefundRequestedAt(now).SetRefundRequestReason(nr).SetRefundRequestedBy(by).SetRefundAmount(refundableOrderPayAmount(o.Amount, o.PayAmount)).Save(ctx)
 	if err != nil {
 		return fmt.Errorf("update: %w", err)
 	}
@@ -234,21 +235,22 @@ func (s *PaymentService) prepareRefundEnabled(ctx context.Context, oid int64, am
 	if math.IsNaN(amt) || math.IsInf(amt, 0) {
 		return nil, nil, infraerrors.BadRequest("INVALID_AMOUNT", "invalid refund amount")
 	}
+	refundablePayAmount := refundableOrderPayAmount(o.Amount, o.PayAmount)
 	existingRefundAmount := moneyx.NonNegative(moneyx.Currency(o.RefundAmount)).InexactFloat64()
 	if o.Status == OrderStatusRefundRequested && o.RefundRequestedAt != nil && o.RefundAt == nil {
 		// REFUND_REQUESTED stores the user's requested amount in refund_amount so
 		// the admin UI can prefill it, but it is not an executed refund yet.
 		existingRefundAmount = 0
 	}
-	remainingRefundAmount := moneyx.Currency(o.Amount).Sub(moneyx.Currency(existingRefundAmount)).InexactFloat64()
+	remainingRefundAmount := moneyx.Currency(refundablePayAmount).Sub(moneyx.Currency(existingRefundAmount)).InexactFloat64()
 	if remainingRefundAmount <= 0 {
-		return nil, nil, infraerrors.BadRequest("REFUND_AMOUNT_EXCEEDED", "refund amount exceeds recharge")
+		return nil, nil, infraerrors.BadRequest("REFUND_AMOUNT_EXCEEDED", "refund amount exceeds paid amount")
 	}
 	if amt <= 0 {
 		amt = remainingRefundAmount
 	}
 	if moneyx.Currency(amt).GreaterThan(moneyx.Currency(remainingRefundAmount)) {
-		return nil, nil, infraerrors.BadRequest("REFUND_AMOUNT_EXCEEDED", "refund amount exceeds recharge")
+		return nil, nil, infraerrors.BadRequest("REFUND_AMOUNT_EXCEEDED", "refund amount exceeds paid amount")
 	}
 	ga := calculateGatewayRefundAmount(o.Amount, o.PayAmount, amt)
 	rr := strings.TrimSpace(reason)
@@ -290,8 +292,9 @@ func (s *PaymentService) prepDeduct(ctx context.Context, o *dbent.PaymentOrder, 
 		return nil
 	}
 	p.DeductionType = payment.DeductionTypeBalance
+	balanceDeductionAmount := calculateBalanceDeductionAmount(o.Amount, o.PayAmount, p.RefundAmount)
 	p.BalanceToDeduct = moneyx.Min(
-		moneyx.Currency(p.RefundAmount),
+		moneyx.Currency(balanceDeductionAmount),
 		moneyx.Currency(u.Balance),
 	).InexactFloat64()
 	return nil
@@ -422,7 +425,7 @@ func refundAuditAction(base string, totalRefundAmount float64) string {
 
 func (s *PaymentService) markRefundOk(ctx context.Context, p *RefundPlan) (*RefundResult, error) {
 	fs := OrderStatusRefunded
-	if moneyx.Currency(p.TotalRefundAmount).LessThan(moneyx.Currency(p.Order.Amount)) {
+	if moneyx.Currency(p.TotalRefundAmount).LessThan(moneyx.Currency(refundableOrderPayAmount(p.Order.Amount, p.Order.PayAmount))) {
 		fs = OrderStatusPartiallyRefunded
 	}
 	now := time.Now()
@@ -531,13 +534,14 @@ func customReferralRefundBaseAmount(o *dbent.PaymentOrder, orderRefundAmount, ga
 		return 0
 	}
 	baseAmount := customReferralCommissionBaseAmount(o)
-	if baseAmount <= 0 || orderRefundAmount <= 0 || o.Amount <= 0 {
+	refundablePayAmount := refundableOrderPayAmount(o.Amount, o.PayAmount)
+	if baseAmount <= 0 || orderRefundAmount <= 0 || refundablePayAmount <= 0 {
 		return 0
 	}
-	if moneyx.Currency(orderRefundAmount).GreaterThanOrEqual(moneyx.Currency(o.Amount)) {
+	if moneyx.Currency(orderRefundAmount).GreaterThanOrEqual(moneyx.Currency(refundablePayAmount)) {
 		return baseAmount
 	}
-	return moneyx.Proportion(baseAmount, orderRefundAmount, o.Amount, moneyx.ScaleCurrency).InexactFloat64()
+	return moneyx.Proportion(baseAmount, orderRefundAmount, refundablePayAmount, moneyx.ScaleCurrency).InexactFloat64()
 }
 
 func (s *PaymentService) RollbackRefund(ctx context.Context, p *RefundPlan, gErr error) bool {
