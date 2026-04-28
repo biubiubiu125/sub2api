@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -589,15 +590,25 @@ func (s *CustomReferralService) HandleLanding(ctx context.Context, code string, 
 	if click.ClickedAt.IsZero() {
 		click.ClickedAt = time.Now()
 	}
-	if err := s.repo.RecordReferralClick(ctx, affiliate.ID, affiliate.InviteCode, click); err != nil {
-		return nil, err
-	}
+	s.enqueueReferralClick(context.WithoutCancel(ctx), affiliate.ID, affiliate.InviteCode, click)
 	cfg, _ := s.loadConfig(ctx)
 	return &CustomReferralLanding{
 		Code:          affiliate.InviteCode,
 		RedirectPath:  customReferralDefaultRedirectPath,
 		CookieTTLDays: cfg.CookieTTLDays,
 	}, nil
+}
+
+func (s *CustomReferralService) enqueueReferralClick(ctx context.Context, affiliateID int64, inviteCode string, click CustomReferralClickInput) {
+	if s == nil || s.repo == nil || affiliateID <= 0 {
+		return
+	}
+
+	go func() {
+		if err := s.repo.RecordReferralClick(ctx, affiliateID, inviteCode, click); err != nil {
+			slog.Warn("custom referral click record failed", "affiliate_id", affiliateID, "invite_code", inviteCode, "error", err)
+		}
+	}()
 }
 
 func (s *CustomReferralService) BindInviteeByCode(ctx context.Context, inviteeUserID int64, code string) error {

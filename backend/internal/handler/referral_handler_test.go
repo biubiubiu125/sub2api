@@ -119,6 +119,9 @@ func TestCaptureReferralRedirectsWithQueryAndSetsCookie(t *testing.T) {
 	if code != "ABC123" {
 		t.Fatalf("cookie code = %q, want ABC123", code)
 	}
+	for i := 0; i < 20 && (repo.click.IPHash == "" || repo.click.UserAgentHash == ""); i++ {
+		time.Sleep(10 * time.Millisecond)
+	}
 	if repo.click.IPHash == "" || repo.click.UserAgentHash == "" {
 		t.Fatalf("click risk hashes were not recorded: %+v", repo.click)
 	}
