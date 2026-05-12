@@ -367,6 +367,13 @@ export interface SystemSettings {
   contact_info: string;
   doc_url: string;
   home_content: string;
+  seo_default_title?: string;
+  seo_home_title?: string;
+  seo_default_description?: string;
+  seo_home_description?: string;
+  seo_default_og_image?: string;
+  seo_default_robots?: string;
+  seo_home_robots?: string;
   hide_ccs_import_button: boolean;
   table_default_page_size: number;
   table_page_size_options: number[];
@@ -473,6 +480,8 @@ export interface SystemSettings {
   enable_metadata_passthrough: boolean;
   enable_cch_signing: boolean;
   enable_anthropic_cache_ttl_1h_injection: boolean;
+  rewrite_message_cache_control: boolean;
+  antigravity_user_agent_version: string;
   web_search_emulation_enabled?: boolean;
 
   // Payment configuration
@@ -576,6 +585,13 @@ export interface UpdateSettingsRequest {
   contact_info?: string;
   doc_url?: string;
   home_content?: string;
+  seo_default_title?: string;
+  seo_home_title?: string;
+  seo_default_description?: string;
+  seo_home_description?: string;
+  seo_default_og_image?: string;
+  seo_default_robots?: string;
+  seo_home_robots?: string;
   hide_ccs_import_button?: boolean;
   table_default_page_size?: number;
   table_page_size_options?: number[];
@@ -662,6 +678,8 @@ export interface UpdateSettingsRequest {
   enable_metadata_passthrough?: boolean;
   enable_cch_signing?: boolean;
   enable_anthropic_cache_ttl_1h_injection?: boolean;
+  rewrite_message_cache_control?: boolean;
+  antigravity_user_agent_version?: string;
   // Payment configuration
   payment_enabled?: boolean;
   risk_control_enabled?: boolean;

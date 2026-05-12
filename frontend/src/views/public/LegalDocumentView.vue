@@ -14,7 +14,7 @@
           to="/login"
           class="inline-flex flex-shrink-0 items-center justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-primary-600/20 transition hover:bg-primary-700"
         >
-          登录
+          {{ t('common.login') }}
         </RouterLink>
       </div>
     </header>
@@ -85,32 +85,28 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
-import { marked } from 'marked'
-import DOMPurify from 'dompurify'
+import { useRoute, RouterLink } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import { getPublicSettings } from '@/api/auth'
+import { updateRouteSEO } from '@/utils/seo'
 import { sanitizeUrl } from '@/utils/url'
 import type { LoginAgreementDocument, PublicSettings } from '@/types'
+import { renderPublicMarkdown } from '@/utils/publicContent'
 
 type LegalDocumentIcon = 'document' | 'shield' | 'globe' | 'cog'
 
 const route = useRoute()
+const { t } = useI18n()
 const settings = ref<PublicSettings | null>(null)
 const loading = ref(true)
 const loadError = ref(false)
-
-marked.setOptions({
-  breaks: true,
-  gfm: true,
-})
 
 const documentId = computed(() => String(route.params.documentId || ''))
 const documents = computed(() => settings.value?.login_agreement_documents ?? [])
 const siteName = computed(() => settings.value?.site_name || 'Sub2API')
 const siteLogo = computed(() => sanitizeUrl(settings.value?.site_logo || '', {
   allowRelative: true,
-  allowDataUrl: true,
 }))
 const updatedAt = computed(() => settings.value?.login_agreement_updated_at || '')
 
@@ -129,8 +125,7 @@ const renderedHtml = computed(() => {
   if (!content) {
     return ''
   }
-  const html = marked.parse(content) as string
-  return DOMPurify.sanitize(html)
+  return renderPublicMarkdown(content, { pageSlug: `legal-${documentId.value}` })
 })
 
 const documentIcon = computed<LegalDocumentIcon>(() => {
@@ -152,6 +147,7 @@ onMounted(async () => {
   loadError.value = false
   try {
     settings.value = await getPublicSettings()
+    updateRouteSEO(route, settings.value)
   } catch {
     loadError.value = true
   } finally {

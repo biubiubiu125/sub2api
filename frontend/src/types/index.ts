@@ -326,6 +326,10 @@ export interface CustomMenuItem {
   icon_svg: string
   url: string
   page_slug?: string
+  seo_title?: string
+  seo_description?: string
+  seo_og_image?: string
+  seo_robots?: string
   visibility: 'user' | 'admin'
   sort_order: number
 }
@@ -340,6 +344,10 @@ export interface LoginAgreementDocument {
   id: string
   title: string
   content_md: string
+  seo_title?: string
+  seo_description?: string
+  seo_og_image?: string
+  seo_robots?: string
 }
 
 export interface PublicSettings {
@@ -350,6 +358,7 @@ export interface PublicSettings {
   promo_code_enabled: boolean
   password_reset_enabled: boolean
   invitation_code_enabled: boolean
+  frontend_url?: string
   login_agreement_enabled?: boolean
   login_agreement_mode?: 'modal' | 'checkbox' | string
   login_agreement_updated_at?: string
@@ -364,6 +373,13 @@ export interface PublicSettings {
   contact_info: string
   doc_url: string
   home_content: string
+  seo_default_title?: string
+  seo_home_title?: string
+  seo_default_description?: string
+  seo_home_description?: string
+  seo_default_og_image?: string
+  seo_default_robots?: string
+  seo_home_robots?: string
   hide_ccs_import_button: boolean
   payment_enabled: boolean
   risk_control_enabled: boolean
@@ -1260,6 +1276,51 @@ export interface AdminDataImportResult {
   account_created: number
   account_failed: number
   errors?: AdminDataImportError[]
+}
+
+export interface CodexSessionImportRequest {
+  content?: string
+  contents?: string[]
+  name?: string
+  notes?: string | null
+  group_ids?: number[]
+  proxy_id?: number | null
+  concurrency?: number
+  priority?: number
+  rate_multiplier?: number
+  load_factor?: number | null
+  expires_at?: number | null
+  auto_pause_on_expired?: boolean
+  credential_extras?: Record<string, unknown>
+  extra?: Record<string, unknown>
+  update_existing?: boolean
+  skip_default_group_bind?: boolean
+  confirm_mixed_channel_risk?: boolean
+}
+
+export interface CodexSessionImportMessage {
+  index: number
+  name?: string
+  message: string
+}
+
+export interface CodexSessionImportItem {
+  index: number
+  name?: string
+  action: 'created' | 'updated' | 'skipped' | 'failed'
+  account_id?: number
+  message?: string
+}
+
+export interface CodexSessionImportResult {
+  total: number
+  created: number
+  updated: number
+  skipped: number
+  failed: number
+  items?: CodexSessionImportItem[]
+  warnings?: CodexSessionImportMessage[]
+  errors?: CodexSessionImportMessage[]
 }
 
 // ==================== Usage & Redeem Types ====================

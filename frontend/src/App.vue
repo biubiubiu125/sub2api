@@ -3,10 +3,10 @@ import { RouterView, useRouter, useRoute } from 'vue-router'
 import { onMounted, onBeforeUnmount, watch } from 'vue'
 import Toast from '@/components/common/Toast.vue'
 import NavigationProgress from '@/components/common/NavigationProgress.vue'
-import { resolveDocumentTitle } from '@/router/title'
 import AnnouncementPopup from '@/components/common/AnnouncementPopup.vue'
 import { useAppStore, useAuthStore, useSubscriptionStore, useAnnouncementStore } from '@/stores'
 import { getSetupStatus } from '@/api/setup'
+import { updateRouteSEO } from '@/utils/seo'
 
 const router = useRouter()
 const route = useRoute()
@@ -29,6 +29,10 @@ function updateFavicon(logoUrl: string) {
   }
   link.type = logoUrl.endsWith('.svg') ? 'image/svg+xml' : 'image/x-icon'
   link.href = logoUrl
+}
+
+function handleLocaleChanged() {
+  updateRouteSEO(route, appStore.cachedPublicSettings)
 }
 
 // Watch for site settings changes and update favicon/title
@@ -89,6 +93,7 @@ router.afterEach(() => {
 
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisibilityChange)
+  window.removeEventListener('sub2api:locale-changed', handleLocaleChanged)
 })
 
 onMounted(async () => {
@@ -106,8 +111,8 @@ onMounted(async () => {
   // Load public settings into appStore (will be cached for other components)
   await appStore.fetchPublicSettings()
 
-  // Re-resolve document title now that siteName is available
-  document.title = resolveDocumentTitle(route.meta.title, appStore.siteName, route.meta.titleKey as string)
+  updateRouteSEO(route, appStore.cachedPublicSettings)
+  window.addEventListener('sub2api:locale-changed', handleLocaleChanged)
 })
 </script>
 

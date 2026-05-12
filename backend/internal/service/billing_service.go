@@ -2,8 +2,8 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
-
 	"log"
 	"strings"
 
@@ -109,6 +109,10 @@ type CostBreakdown struct {
 	ActualCost        float64 // 应用倍率后的实际费用
 	BillingMode       string  // 计费模式（"token"/"per_request"/"image"），由 CalculateCostUnified 填充
 }
+
+// ErrModelPricingUnavailable indicates that none of the configured pricing
+// sources can price the requested model.
+var ErrModelPricingUnavailable = errors.New("pricing not found")
 
 // BillingService 计费服务
 type BillingService struct {
@@ -217,8 +221,16 @@ func (s *BillingService) initFallbackPricing() {
 		LongContextInputMultiplier:     openAIGPT54LongContextInputMultiplier,
 		LongContextOutputMultiplier:    openAIGPT54LongContextOutputMultiplier,
 	}
-	// GPT-5.5 暂无独立定价，回退到 GPT-5.4
-	s.fallbackPrices["gpt-5.5"] = s.fallbackPrices["gpt-5.4"]
+	s.fallbackPrices["gpt-5.5"] = &ModelPricing{
+		InputPricePerToken:             5e-6,   // $5 per MTok
+		InputPricePerTokenPriority:     1e-5,   // $10 per MTok
+		OutputPricePerToken:            30e-6,  // $30 per MTok
+		OutputPricePerTokenPriority:    60e-6,  // $60 per MTok
+		CacheCreationPricePerToken:     5e-6,   // $5 per MTok
+		CacheReadPricePerToken:         0.5e-6, // $0.5 per MTok
+		CacheReadPricePerTokenPriority: 1e-6,   // $1 per MTok
+		SupportsCacheBreakdown:         false,
+	}
 
 	s.fallbackPrices["gpt-5.4-mini"] = &ModelPricing{
 		InputPricePerToken:     7.5e-7,
@@ -355,7 +367,7 @@ func (s *BillingService) GetModelPricing(model string) (*ModelPricing, error) {
 		return s.applyModelSpecificPricingPolicy(model, fallback), nil
 	}
 
-	return nil, fmt.Errorf("pricing not found for model: %s", model)
+	return nil, fmt.Errorf("%w for model: %s", ErrModelPricingUnavailable, model)
 }
 
 // GetModelPricingWithChannel 获取模型定价，渠道配置的价格覆盖默认值
@@ -452,7 +464,7 @@ func (s *BillingService) calculateTokenCost(resolved *ResolvedPricing, input Cos
 
 	pricing := input.Resolver.GetIntervalPricing(resolved, totalContext)
 	if pricing == nil {
-		return nil, fmt.Errorf("no pricing available for model: %s", input.Model)
+		return nil, fmt.Errorf("no pricing available for model: %s: %w", input.Model, ErrModelPricingUnavailable)
 	}
 
 	pricing = s.applyModelSpecificPricingPolicy(input.Model, pricing)

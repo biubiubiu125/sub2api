@@ -11,6 +11,11 @@ type CustomMenuItem struct {
 	Label      string `json:"label"`
 	IconSVG    string `json:"icon_svg"`
 	URL        string `json:"url"`
+	PageSlug   string `json:"page_slug,omitempty"`
+	SEOTitle   string `json:"seo_title,omitempty"`
+	SEODescription string `json:"seo_description,omitempty"`
+	SEOOGImage string `json:"seo_og_image,omitempty"`
+	SEORobots  string `json:"seo_robots,omitempty"`
 	Visibility string `json:"visibility"` // "user" or "admin"
 	SortOrder  int    `json:"sort_order"`
 }
@@ -29,8 +34,8 @@ type SystemSettings struct {
 	RegistrationEmailSuffixWhitelist []string                 `json:"registration_email_suffix_whitelist"`
 	PromoCodeEnabled                 bool                     `json:"promo_code_enabled"`
 	PasswordResetEnabled             bool                     `json:"password_reset_enabled"`
-	FrontendURL                      string                   `json:"frontend_url"`
 	InvitationCodeEnabled            bool                     `json:"invitation_code_enabled"`
+	FrontendURL                      string                   `json:"frontend_url"`
 	TotpEnabled                      bool                     `json:"totp_enabled"`                   // TOTP 双因素认证
 	TotpEncryptionKeyConfigured      bool                     `json:"totp_encryption_key_configured"` // TOTP 加密密钥是否已配置
 	LoginAgreementEnabled            bool                     `json:"login_agreement_enabled"`
@@ -94,6 +99,16 @@ type SystemSettings struct {
 	OIDCConnectUserInfoEmailPath      string `json:"oidc_connect_userinfo_email_path"`
 	OIDCConnectUserInfoIDPath         string `json:"oidc_connect_userinfo_id_path"`
 	OIDCConnectUserInfoUsernamePath   string `json:"oidc_connect_userinfo_username_path"`
+	GitHubOAuthEnabled                bool   `json:"github_oauth_enabled"`
+	GitHubOAuthClientID               string `json:"github_oauth_client_id"`
+	GitHubOAuthClientSecretConfigured bool   `json:"github_oauth_client_secret_configured"`
+	GitHubOAuthRedirectURL            string `json:"github_oauth_redirect_url"`
+	GitHubOAuthFrontendRedirectURL    string `json:"github_oauth_frontend_redirect_url"`
+	GoogleOAuthEnabled                bool   `json:"google_oauth_enabled"`
+	GoogleOAuthClientID               string `json:"google_oauth_client_id"`
+	GoogleOAuthClientSecretConfigured bool   `json:"google_oauth_client_secret_configured"`
+	GoogleOAuthRedirectURL            string `json:"google_oauth_redirect_url"`
+	GoogleOAuthFrontendRedirectURL    string `json:"google_oauth_frontend_redirect_url"`
 
 	SiteName                    string           `json:"site_name"`
 	SiteLogo                    string           `json:"site_logo"`
@@ -102,6 +117,13 @@ type SystemSettings struct {
 	ContactInfo                 string           `json:"contact_info"`
 	DocURL                      string           `json:"doc_url"`
 	HomeContent                 string           `json:"home_content"`
+	SEODefaultTitle             string           `json:"seo_default_title"`
+	SEOHomeTitle                string           `json:"seo_home_title"`
+	SEODefaultDescription       string           `json:"seo_default_description"`
+	SEOHomeDescription          string           `json:"seo_home_description"`
+	SEODefaultOGImage           string           `json:"seo_default_og_image"`
+	SEODefaultRobots            string           `json:"seo_default_robots"`
+	SEOHomeRobots               string           `json:"seo_home_robots"`
 	HideCcsImportButton         bool             `json:"hide_ccs_import_button"`
 	PurchaseSubscriptionEnabled bool             `json:"purchase_subscription_enabled"`
 	PurchaseSubscriptionURL     string           `json:"purchase_subscription_url"`
@@ -142,10 +164,12 @@ type SystemSettings struct {
 	BackendModeEnabled bool `json:"backend_mode_enabled"`
 
 	// Gateway forwarding behavior
-	EnableFingerprintUnification       bool `json:"enable_fingerprint_unification"`
-	EnableMetadataPassthrough          bool `json:"enable_metadata_passthrough"`
-	EnableCCHSigning                   bool `json:"enable_cch_signing"`
-	EnableAnthropicCacheTTL1hInjection bool `json:"enable_anthropic_cache_ttl_1h_injection"`
+	EnableFingerprintUnification       bool   `json:"enable_fingerprint_unification"`
+	EnableMetadataPassthrough          bool   `json:"enable_metadata_passthrough"`
+	EnableCCHSigning                   bool   `json:"enable_cch_signing"`
+	EnableAnthropicCacheTTL1hInjection bool   `json:"enable_anthropic_cache_ttl_1h_injection"`
+	RewriteMessageCacheControl         bool   `json:"rewrite_message_cache_control"`
+	AntigravityUserAgentVersion        string `json:"antigravity_user_agent_version"`
 
 	// Web Search Emulation
 	WebSearchEmulationEnabled bool `json:"web_search_emulation_enabled"`
@@ -233,6 +257,13 @@ type PublicSettings struct {
 	ContactInfo                      string                   `json:"contact_info"`
 	DocURL                           string                   `json:"doc_url"`
 	HomeContent                      string                   `json:"home_content"`
+	SEODefaultTitle                  string                   `json:"seo_default_title,omitempty"`
+	SEOHomeTitle                     string                   `json:"seo_home_title,omitempty"`
+	SEODefaultDescription            string                   `json:"seo_default_description,omitempty"`
+	SEOHomeDescription               string                   `json:"seo_home_description,omitempty"`
+	SEODefaultOGImage                string                   `json:"seo_default_og_image,omitempty"`
+	SEODefaultRobots                 string                   `json:"seo_default_robots,omitempty"`
+	SEOHomeRobots                    string                   `json:"seo_home_robots,omitempty"`
 	HideCcsImportButton              bool                     `json:"hide_ccs_import_button"`
 	PurchaseSubscriptionEnabled      bool                     `json:"purchase_subscription_enabled"`
 	PurchaseSubscriptionURL          string                   `json:"purchase_subscription_url"`
@@ -264,12 +295,17 @@ type PublicSettings struct {
 	AvailableChannelsEnabled bool `json:"available_channels_enabled"`
 	AffiliateEnabled         bool `json:"affiliate_enabled"`
 	RiskControlEnabled       bool `json:"risk_control_enabled"`
+	FrontendURL              string `json:"frontend_url,omitempty"`
 }
 
 type LoginAgreementDocument struct {
-	ID        string `json:"id"`
-	Title     string `json:"title"`
-	ContentMD string `json:"content_md"`
+	ID             string `json:"id"`
+	Title          string `json:"title"`
+	ContentMD      string `json:"content_md"`
+	SEOTitle       string `json:"seo_title,omitempty"`
+	SEODescription string `json:"seo_description,omitempty"`
+	SEOOGImage     string `json:"seo_og_image,omitempty"`
+	SEORobots      string `json:"seo_robots,omitempty"`
 }
 
 // OverloadCooldownSettings 529过载冷却配置 DTO
@@ -352,7 +388,7 @@ func ParseUserVisibleMenuItems(raw string) []CustomMenuItem {
 	items := ParseCustomMenuItems(raw)
 	filtered := make([]CustomMenuItem, 0, len(items))
 	for _, item := range items {
-		if item.Visibility != "admin" {
+		if item.Visibility != "admin" && (strings.TrimSpace(item.PageSlug) != "" || strings.HasPrefix(strings.TrimSpace(item.URL), "md:")) {
 			filtered = append(filtered, item)
 		}
 	}

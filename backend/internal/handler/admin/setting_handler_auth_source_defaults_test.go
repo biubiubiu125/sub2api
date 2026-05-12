@@ -159,6 +159,48 @@ func TestSettingHandler_GetSettings_InjectsAuthSourceDefaults(t *testing.T) {
 	require.Len(t, subscriptions, 1)
 }
 
+func TestSettingHandler_GetSettings_ExposesEmailOAuthConfigFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &settingHandlerRepoStub{
+		values: map[string]string{
+			service.SettingKeyGitHubOAuthEnabled:             "true",
+			service.SettingKeyGitHubOAuthClientID:            "github-client-id",
+			service.SettingKeyGitHubOAuthClientSecret:        "github-client-secret",
+			service.SettingKeyGitHubOAuthRedirectURL:         "https://example.com/api/v1/auth/oauth/github/callback",
+			service.SettingKeyGitHubOAuthFrontendRedirectURL: "/auth/oauth/callback",
+			service.SettingKeyGoogleOAuthEnabled:             "true",
+			service.SettingKeyGoogleOAuthClientID:            "google-client-id",
+			service.SettingKeyGoogleOAuthClientSecret:        "google-client-secret",
+			service.SettingKeyGoogleOAuthRedirectURL:         "https://example.com/api/v1/auth/oauth/google/callback",
+			service.SettingKeyGoogleOAuthFrontendRedirectURL: "/auth/oauth/callback",
+		},
+	}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/settings", nil)
+
+	handler.GetSettings(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp response.Response
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	data, ok := resp.Data.(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, true, data["github_oauth_enabled"])
+	require.Equal(t, "github-client-id", data["github_oauth_client_id"])
+	require.Equal(t, true, data["github_oauth_client_secret_configured"])
+	require.Equal(t, "https://example.com/api/v1/auth/oauth/github/callback", data["github_oauth_redirect_url"])
+	require.Equal(t, "/auth/oauth/callback", data["github_oauth_frontend_redirect_url"])
+	require.Equal(t, true, data["google_oauth_enabled"])
+	require.Equal(t, "google-client-id", data["google_oauth_client_id"])
+	require.Equal(t, true, data["google_oauth_client_secret_configured"])
+	require.Equal(t, "https://example.com/api/v1/auth/oauth/google/callback", data["google_oauth_redirect_url"])
+	require.Equal(t, "/auth/oauth/callback", data["google_oauth_frontend_redirect_url"])
+}
+
 func TestSettingHandler_UpdateSettings_PreservesOmittedAuthSourceDefaults(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := &settingHandlerRepoStub{
@@ -470,6 +512,203 @@ func TestSettingHandler_UpdateSettings_DoesNotPersistPartialSystemSettingsWhenAu
 	require.Equal(t, http.StatusInternalServerError, rec.Code)
 	require.Equal(t, "false", repo.values[service.SettingKeyRegistrationEnabled])
 	require.Equal(t, "9.5", repo.values[service.SettingKeyAuthSourceDefaultEmailBalance])
+}
+
+func TestSettingHandler_UpdateSettings_RejectsFrontendURLWithQueryOrUserinfo(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for _, frontendURL := range []string{
+		"https://example.com?utm=1",
+		"https://user:pass@example.com",
+	} {
+		repo := &settingHandlerRepoStub{
+			values: map[string]string{
+				service.SettingKeyPromoCodeEnabled: "true",
+			},
+		}
+		svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+		handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
+
+		body := map[string]any{
+			"promo_code_enabled": true,
+			"frontend_url":       frontendURL,
+		}
+		rawBody, err := json.Marshal(body)
+		require.NoError(t, err)
+
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+		c.Request.Header.Set("Content-Type", "application/json")
+
+		handler.UpdateSettings(c)
+		require.Equal(t, http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestSettingHandler_UpdateSettings_AcceptsSupportedSEOImageAndRobotsValues(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repo := &settingHandlerRepoStub{
+		values: map[string]string{
+			service.SettingKeyPromoCodeEnabled: "true",
+		},
+	}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
+
+	body := map[string]any{
+		"promo_code_enabled":   true,
+		"seo_default_og_image": "/og/home.svg",
+		"seo_default_robots":   "index, follow",
+		"seo_home_robots":      "noindex, nofollow",
+		"login_agreement_documents": []map[string]any{
+			{
+				"id":           "terms",
+				"title":        "服务条款",
+				"content_md":   "# 条款",
+				"seo_og_image": "https://example.com/legal.png",
+				"seo_robots":   "index, follow",
+			},
+		},
+		"custom_menu_items": []map[string]any{
+			{
+				"id":           "guide",
+				"label":        "Guide",
+				"url":          "md:guide",
+				"page_slug":    "guide",
+				"visibility":   "user",
+				"seo_og_image": "/og/custom-guide.svg",
+				"seo_robots":   "index, nofollow",
+			},
+		},
+	}
+	rawBody, err := json.Marshal(body)
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.UpdateSettings(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "/og/home.svg", repo.values[service.SettingKeySEODefaultOGImage])
+	require.Equal(t, "index, follow", repo.values[service.SettingKeySEODefaultRobots])
+	require.Equal(t, "noindex, nofollow", repo.values[service.SettingKeySEOHomeRobots])
+}
+
+func TestSettingHandler_UpdateSettings_RejectsInvalidSEOImageAndRobotsValues(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []map[string]any{
+		{
+			"promo_code_enabled":   true,
+			"seo_default_og_image": "//evil.example/x.png",
+		},
+		{
+			"promo_code_enabled": true,
+			"site_logo":          "data:image/svg+xml;base64,PHN2ZyBvbmxvYWQ9YWxlcnQoMSk+",
+		},
+		{
+			"promo_code_enabled": true,
+			"seo_default_robots": "index, maybe",
+		},
+		{
+			"promo_code_enabled": true,
+			"login_agreement_documents": []map[string]any{
+				{
+					"id":           "terms",
+					"title":        "服务条款",
+					"content_md":   "# 条款",
+					"seo_og_image": "javascript:alert(1)",
+				},
+			},
+		},
+		{
+			"promo_code_enabled": true,
+			"custom_menu_items": []map[string]any{
+				{
+					"id":         "guide",
+					"label":      "Guide",
+					"url":        "md:guide",
+					"page_slug":  "guide",
+					"visibility": "user",
+					"seo_robots": "bad-value",
+				},
+			},
+		},
+		{
+			"promo_code_enabled": true,
+			"home_content":       "https://evil.example/embed",
+		},
+		{
+			"promo_code_enabled": true,
+			"custom_menu_items": []map[string]any{
+				{
+					"id":         "pricing",
+					"label":      "Pricing",
+					"url":        "https://billing.example.com/embed",
+					"visibility": "user",
+				},
+			},
+		},
+	}
+
+	for _, body := range tests {
+		repo := &settingHandlerRepoStub{
+			values: map[string]string{
+				service.SettingKeyPromoCodeEnabled: "true",
+			},
+		}
+		svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+		handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
+
+		rawBody, err := json.Marshal(body)
+		require.NoError(t, err)
+
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+		c.Request.Header.Set("Content-Type", "application/json")
+
+		handler.UpdateSettings(c)
+		require.Equal(t, http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestSettingHandler_UpdateSettings_RejectsCustomMenuPageSlugThatRuntimeCannotServe(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &settingHandlerRepoStub{values: map[string]string{}}
+	svc := service.NewSettingService(repo, &config.Config{})
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
+
+	body := map[string]any{
+		"promo_code_enabled": true,
+		"custom_menu_items": []map[string]any{
+			{
+				"id":         "guide",
+				"label":      "Guide",
+				"url":        "md:_guide",
+				"page_slug":  "_guide",
+				"visibility": "user",
+			},
+		},
+	}
+
+	rawBody, err := json.Marshal(body)
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.UpdateSettings(c)
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+	require.Contains(t, rec.Body.String(), "page_slug contains invalid characters")
 }
 
 func TestDiffSettings_IncludesAuthSourceDefaultsAndForceEmail(t *testing.T) {

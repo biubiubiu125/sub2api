@@ -6,12 +6,11 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
-import { useAdminSettingsStore } from '@/stores/adminSettings'
 import { useReferralStore } from '@/stores/referral'
 import { useNavigationLoadingState } from '@/composables/useNavigationLoading'
 import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { captureAffiliateCodeFromQuery } from '@/utils/affiliateCookie'
-import { resolveDocumentTitle } from './title'
+import { updateRouteSEO } from '@/utils/seo'
 
 /**
  * Route definitions with lazy loading
@@ -350,6 +349,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/payment/airwallex',
+    name: 'AirwallexPayment',
+    component: () => import('@/views/user/AirwallexPaymentView.vue'),
+    meta: {
+      requiresAuth: false,
+      requiresAdmin: false,
+      title: 'Airwallex Payment',
+      titleKey: 'payment.airwallexPay',
+      requiresPayment: false
+    }
+  },
+  {
     path: '/payment/stripe-popup',
     name: 'StripePopup',
     component: () => import('@/views/user/StripePopupView.vue'),
@@ -361,11 +372,21 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/docs/tutorial',
+    name: 'TutorialDocument',
+    component: () => import('@/views/TutorialDocumentRouteView.vue'),
+    meta: {
+      requiresAuth: false,
+      requiresAdmin: false,
+      title: '教程文档'
+    }
+  },
+  {
     path: '/custom/:id',
     name: 'CustomPage',
-    component: () => import('@/views/user/CustomPageView.vue'),
+    component: () => import('@/views/CustomPageRouteView.vue'),
     meta: {
-      requiresAuth: true,
+      requiresAuth: false,
       requiresAdmin: false,
       title: 'Custom Page',
       titleKey: 'customPage.title',
@@ -613,6 +634,36 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/seo',
+    name: 'AdminSEOSettings',
+    component: () => import('@/views/admin/SEOSettingsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'SEO配置'
+    }
+  },
+  {
+    path: '/admin/tutorial',
+    name: 'AdminTutorialEditor',
+    component: () => import('@/views/admin/TutorialEditorView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: '教程文档'
+    }
+  },
+  {
+    path: '/admin/provider-pricing',
+    name: 'AdminProviderPricing',
+    component: () => import('@/views/admin/ProviderPricingView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: '公开价格导出配置'
+    }
+  },
+  {
     path: '/admin/risk-control',
     name: 'AdminRiskControl',
     component: () => import('@/views/admin/RiskControlView.vue'),
@@ -711,7 +762,7 @@ let authInitialized = false
 const navigationLoading = useNavigationLoadingState()
 // 延迟初始化预加载，传入 router 实例
 let routePrefetch: ReturnType<typeof useRoutePrefetch> | null = null
-const BACKEND_MODE_ALLOWED_PATHS = ['/login', '/key-usage', '/setup', '/payment/result', '/legal']
+const BACKEND_MODE_ALLOWED_PATHS = ['/login', '/key-usage', '/setup', '/payment/result', '/payment/airwallex', '/legal', '/docs', '/custom']
 const BACKEND_MODE_CALLBACK_PATHS = [
   '/auth/callback',
   '/auth/linuxdo/callback',
@@ -754,22 +805,7 @@ router.beforeEach(async (to, _from, next) => {
 
   // Set page title
   const appStore = useAppStore()
-  // For custom pages, use menu item label as document title
-  if (to.name === 'CustomPage') {
-    const id = to.params.id as string
-    const publicItems = appStore.cachedPublicSettings?.custom_menu_items ?? []
-    const adminSettingsStore = useAdminSettingsStore()
-    const menuItem = publicItems.find((item) => item.id === id)
-      ?? (authStore.isAdmin ? adminSettingsStore.customMenuItems.find((item) => item.id === id) : undefined)
-    if (menuItem?.label) {
-      const siteName = appStore.siteName || 'Sub2API'
-      document.title = `${menuItem.label} - ${siteName}`
-    } else {
-      document.title = resolveDocumentTitle(to.meta.title, appStore.siteName, to.meta.titleKey as string)
-    }
-  } else {
-    document.title = resolveDocumentTitle(to.meta.title, appStore.siteName, to.meta.titleKey as string)
-  }
+  updateRouteSEO(to, appStore.cachedPublicSettings)
 
   // Check if route requires authentication
   const requiresAuth = to.meta.requiresAuth !== false // Default to true
@@ -890,6 +926,8 @@ router.beforeEach(async (to, _from, next) => {
  * Navigation guard: End loading and trigger prefetch
  */
 router.afterEach((to) => {
+  const appStore = useAppStore()
+  updateRouteSEO(to, appStore.cachedPublicSettings)
   // 结束导航加载状态
   navigationLoading.endNavigation()
 

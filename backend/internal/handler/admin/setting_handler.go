@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -25,6 +26,9 @@ var semverPattern = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
 // menuItemIDPattern validates custom menu item IDs: alphanumeric, hyphens, underscores only.
 var menuItemIDPattern = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
+// publicPageSlugPattern must stay aligned with handler/page_handler.go validSlugPattern.
+var publicPageSlugPattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
+
 // generateMenuItemID generates a short random hex ID for a custom menu item.
 func generateMenuItemID() (string, error) {
 	b := make([]byte, 8)
@@ -32,6 +36,11 @@ func generateMenuItemID() (string, error) {
 		return "", fmt.Errorf("generate menu item ID: %w", err)
 	}
 	return hex.EncodeToString(b), nil
+}
+
+func isValidPublicPageSlug(slug string) bool {
+	slug = strings.TrimSpace(slug)
+	return slug != "" && len(slug) <= 64 && publicPageSlugPattern.MatchString(slug)
 }
 
 func scopesContainOpenID(scopes string) bool {
@@ -50,6 +59,59 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+var allowedSEORobotsValues = map[string]struct{}{
+	"":                  {},
+	"index, follow":     {},
+	"noindex, nofollow": {},
+	"index, nofollow":   {},
+	"noindex, follow":   {},
+}
+
+var seoInlineImagePattern = regexp.MustCompile(`^data:image/(png|jpeg|jpg|gif|webp);base64,[a-z0-9+/=\s]+$`)
+
+func validatePublicSiteBaseURL(raw string) error {
+	if err := config.ValidateAbsoluteHTTPURL(raw); err != nil {
+		return err
+	}
+
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return err
+	}
+	if parsed.RawQuery != "" {
+		return fmt.Errorf("must not include query")
+	}
+	if parsed.User != nil {
+		return fmt.Errorf("must not include userinfo")
+	}
+	return nil
+}
+
+func validateSEOImageURL(raw string) error {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	if strings.HasPrefix(raw, "/") {
+		if strings.HasPrefix(raw, "//") {
+			return fmt.Errorf("must not start with //")
+		}
+		return nil
+	}
+	if seoInlineImagePattern.MatchString(strings.ToLower(raw)) {
+		return nil
+	}
+	return config.ValidateAbsoluteHTTPURL(raw)
+}
+
+func validateSEORobotsValue(raw string) error {
+	raw = strings.TrimSpace(strings.ToLower(raw))
+	if _, ok := allowedSEORobotsValues[raw]; ok {
+		return nil
+	}
+	return fmt.Errorf("unsupported robots value")
 }
 
 // SettingHandler 系统设置处理器
@@ -173,6 +235,16 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		OIDCConnectUserInfoEmailPath:           settings.OIDCConnectUserInfoEmailPath,
 		OIDCConnectUserInfoIDPath:              settings.OIDCConnectUserInfoIDPath,
 		OIDCConnectUserInfoUsernamePath:        settings.OIDCConnectUserInfoUsernamePath,
+		GitHubOAuthEnabled:                     settings.GitHubOAuthEnabled,
+		GitHubOAuthClientID:                    settings.GitHubOAuthClientID,
+		GitHubOAuthClientSecretConfigured:      settings.GitHubOAuthClientSecretConfigured,
+		GitHubOAuthRedirectURL:                 settings.GitHubOAuthRedirectURL,
+		GitHubOAuthFrontendRedirectURL:         settings.GitHubOAuthFrontendRedirectURL,
+		GoogleOAuthEnabled:                     settings.GoogleOAuthEnabled,
+		GoogleOAuthClientID:                    settings.GoogleOAuthClientID,
+		GoogleOAuthClientSecretConfigured:      settings.GoogleOAuthClientSecretConfigured,
+		GoogleOAuthRedirectURL:                 settings.GoogleOAuthRedirectURL,
+		GoogleOAuthFrontendRedirectURL:         settings.GoogleOAuthFrontendRedirectURL,
 		SiteName:                               settings.SiteName,
 		SiteLogo:                               settings.SiteLogo,
 		SiteSubtitle:                           settings.SiteSubtitle,
@@ -180,6 +252,13 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		ContactInfo:                            settings.ContactInfo,
 		DocURL:                                 settings.DocURL,
 		HomeContent:                            settings.HomeContent,
+		SEODefaultTitle:                        settings.SEODefaultTitle,
+		SEOHomeTitle:                           settings.SEOHomeTitle,
+		SEODefaultDescription:                  settings.SEODefaultDescription,
+		SEOHomeDescription:                     settings.SEOHomeDescription,
+		SEODefaultOGImage:                      settings.SEODefaultOGImage,
+		SEODefaultRobots:                       settings.SEODefaultRobots,
+		SEOHomeRobots:                          settings.SEOHomeRobots,
 		HideCcsImportButton:                    settings.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:            settings.PurchaseSubscriptionEnabled,
 		PurchaseSubscriptionURL:                settings.PurchaseSubscriptionURL,
@@ -210,6 +289,8 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		EnableMetadataPassthrough:              settings.EnableMetadataPassthrough,
 		EnableCCHSigning:                       settings.EnableCCHSigning,
 		EnableAnthropicCacheTTL1hInjection:     settings.EnableAnthropicCacheTTL1hInjection,
+		RewriteMessageCacheControl:             settings.RewriteMessageCacheControl,
+		AntigravityUserAgentVersion:            settings.AntigravityUserAgentVersion,
 		WebSearchEmulationEnabled:              settings.WebSearchEmulationEnabled,
 		PaymentVisibleMethodAlipaySource:       settings.PaymentVisibleMethodAlipaySource,
 		PaymentVisibleMethodWxpaySource:        settings.PaymentVisibleMethodWxpaySource,
@@ -246,6 +327,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		ChannelMonitorDefaultIntervalSeconds: settings.ChannelMonitorDefaultIntervalSeconds,
 
 		AvailableChannelsEnabled: settings.AvailableChannelsEnabled,
+		RiskControlEnabled:       settings.RiskControlEnabled,
 	}
 
 	// OpenAI fast policy (stored under a dedicated setting key)
@@ -296,9 +378,13 @@ func loginAgreementDocumentsToDTO(items []service.LoginAgreementDocument) []dto.
 	result := make([]dto.LoginAgreementDocument, 0, len(items))
 	for _, item := range items {
 		result = append(result, dto.LoginAgreementDocument{
-			ID:        item.ID,
-			Title:     item.Title,
-			ContentMD: item.ContentMD,
+			ID:             item.ID,
+			Title:          item.Title,
+			ContentMD:      item.ContentMD,
+			SEOTitle:       item.SEOTitle,
+			SEODescription: item.SEODescription,
+			SEOOGImage:     item.SEOOGImage,
+			SEORobots:      item.SEORobots,
 		})
 	}
 	return result
@@ -313,9 +399,13 @@ func loginAgreementDocumentsToService(items []dto.LoginAgreementDocument) []serv
 			continue
 		}
 		result = append(result, service.LoginAgreementDocument{
-			ID:        strings.TrimSpace(item.ID),
-			Title:     title,
-			ContentMD: content,
+			ID:             strings.TrimSpace(item.ID),
+			Title:          title,
+			ContentMD:      content,
+			SEOTitle:       strings.TrimSpace(item.SEOTitle),
+			SEODescription: strings.TrimSpace(item.SEODescription),
+			SEOOGImage:     strings.TrimSpace(item.SEOOGImage),
+			SEORobots:      strings.TrimSpace(item.SEORobots),
 		})
 	}
 	return result
@@ -398,6 +488,16 @@ type UpdateSettingsRequest struct {
 	OIDCConnectUserInfoEmailPath    string `json:"oidc_connect_userinfo_email_path"`
 	OIDCConnectUserInfoIDPath       string `json:"oidc_connect_userinfo_id_path"`
 	OIDCConnectUserInfoUsernamePath string `json:"oidc_connect_userinfo_username_path"`
+	GitHubOAuthEnabled              bool   `json:"github_oauth_enabled"`
+	GitHubOAuthClientID             string `json:"github_oauth_client_id"`
+	GitHubOAuthClientSecret         string `json:"github_oauth_client_secret"`
+	GitHubOAuthRedirectURL          string `json:"github_oauth_redirect_url"`
+	GitHubOAuthFrontendRedirectURL  string `json:"github_oauth_frontend_redirect_url"`
+	GoogleOAuthEnabled              bool   `json:"google_oauth_enabled"`
+	GoogleOAuthClientID             string `json:"google_oauth_client_id"`
+	GoogleOAuthClientSecret         string `json:"google_oauth_client_secret"`
+	GoogleOAuthRedirectURL          string `json:"google_oauth_redirect_url"`
+	GoogleOAuthFrontendRedirectURL  string `json:"google_oauth_frontend_redirect_url"`
 
 	// OEM设置
 	SiteName                    string                `json:"site_name"`
@@ -407,6 +507,13 @@ type UpdateSettingsRequest struct {
 	ContactInfo                 string                `json:"contact_info"`
 	DocURL                      string                `json:"doc_url"`
 	HomeContent                 string                `json:"home_content"`
+	SEODefaultTitle             string                `json:"seo_default_title"`
+	SEOHomeTitle                string                `json:"seo_home_title"`
+	SEODefaultDescription       string                `json:"seo_default_description"`
+	SEOHomeDescription          string                `json:"seo_home_description"`
+	SEODefaultOGImage           string                `json:"seo_default_og_image"`
+	SEODefaultRobots            string                `json:"seo_default_robots"`
+	SEOHomeRobots               string                `json:"seo_home_robots"`
 	HideCcsImportButton         bool                  `json:"hide_ccs_import_button"`
 	PurchaseSubscriptionEnabled *bool                 `json:"purchase_subscription_enabled"`
 	PurchaseSubscriptionURL     *string               `json:"purchase_subscription_url"`
@@ -469,10 +576,12 @@ type UpdateSettingsRequest struct {
 	BackendModeEnabled bool `json:"backend_mode_enabled"`
 
 	// Gateway forwarding behavior
-	EnableFingerprintUnification       *bool `json:"enable_fingerprint_unification"`
-	EnableMetadataPassthrough          *bool `json:"enable_metadata_passthrough"`
-	EnableCCHSigning                   *bool `json:"enable_cch_signing"`
-	EnableAnthropicCacheTTL1hInjection *bool `json:"enable_anthropic_cache_ttl_1h_injection"`
+	EnableFingerprintUnification       *bool   `json:"enable_fingerprint_unification"`
+	EnableMetadataPassthrough          *bool   `json:"enable_metadata_passthrough"`
+	EnableCCHSigning                   *bool   `json:"enable_cch_signing"`
+	EnableAnthropicCacheTTL1hInjection *bool   `json:"enable_anthropic_cache_ttl_1h_injection"`
+	RewriteMessageCacheControl         *bool   `json:"rewrite_message_cache_control"`
+	AntigravityUserAgentVersion        *string `json:"antigravity_user_agent_version"`
 
 	// Payment visible method routing
 	PaymentVisibleMethodAlipaySource  *string `json:"payment_visible_method_alipay_source"`
@@ -520,6 +629,7 @@ type UpdateSettingsRequest struct {
 
 	// Available Channels feature switch (user-facing)
 	AvailableChannelsEnabled *bool `json:"available_channels_enabled"`
+	RiskControlEnabled       *bool `json:"risk_control_enabled"`
 
 	// OpenAI fast/flex policy (optional, only updated when provided)
 	OpenAIFastPolicySettings *dto.OpenAIFastPolicySettings `json:"openai_fast_policy_settings,omitempty"`
@@ -651,6 +761,14 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		}
 		if len(doc.ContentMD) > 200*1024 {
 			response.BadRequest(c, "Login agreement document content is too large (max 200KB)")
+			return
+		}
+		if err := validateSEOImageURL(doc.SEOOGImage); err != nil {
+			response.BadRequest(c, "Login agreement document SEO OG image must be an absolute http(s) URL, a site-relative path, or a supported image data URL")
+			return
+		}
+		if err := validateSEORobotsValue(doc.SEORobots); err != nil {
+			response.BadRequest(c, "Login agreement document SEO robots value is invalid")
 			return
 		}
 	}
@@ -957,6 +1075,24 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		}
 	}
 
+	if req.GitHubOAuthEnabled {
+		req.GitHubOAuthClientID = strings.TrimSpace(firstNonEmpty(req.GitHubOAuthClientID, previousSettings.GitHubOAuthClientID))
+		req.GitHubOAuthRedirectURL = strings.TrimSpace(firstNonEmpty(req.GitHubOAuthRedirectURL, previousSettings.GitHubOAuthRedirectURL))
+		req.GitHubOAuthFrontendRedirectURL = strings.TrimSpace(firstNonEmpty(req.GitHubOAuthFrontendRedirectURL, previousSettings.GitHubOAuthFrontendRedirectURL))
+		if req.GitHubOAuthClientSecret == "" {
+			req.GitHubOAuthClientSecret = previousSettings.GitHubOAuthClientSecret
+		}
+	}
+
+	if req.GoogleOAuthEnabled {
+		req.GoogleOAuthClientID = strings.TrimSpace(firstNonEmpty(req.GoogleOAuthClientID, previousSettings.GoogleOAuthClientID))
+		req.GoogleOAuthRedirectURL = strings.TrimSpace(firstNonEmpty(req.GoogleOAuthRedirectURL, previousSettings.GoogleOAuthRedirectURL))
+		req.GoogleOAuthFrontendRedirectURL = strings.TrimSpace(firstNonEmpty(req.GoogleOAuthFrontendRedirectURL, previousSettings.GoogleOAuthFrontendRedirectURL))
+		if req.GoogleOAuthClientSecret == "" {
+			req.GoogleOAuthClientSecret = previousSettings.GoogleOAuthClientSecret
+		}
+	}
+
 	// “购买订阅”页面配置验证
 	purchaseEnabled := previousSettings.PurchaseSubscriptionEnabled
 	if req.PurchaseSubscriptionEnabled != nil {
@@ -988,10 +1124,35 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	// Frontend URL 验证
 	req.FrontendURL = strings.TrimSpace(req.FrontendURL)
 	if req.FrontendURL != "" {
-		if err := config.ValidateAbsoluteHTTPURL(req.FrontendURL); err != nil {
+		if err := validatePublicSiteBaseURL(req.FrontendURL); err != nil {
 			response.BadRequest(c, "Frontend URL must be an absolute http(s) URL")
 			return
 		}
+	}
+	req.SiteLogo = strings.TrimSpace(req.SiteLogo)
+	if err := validateSEOImageURL(req.SiteLogo); err != nil {
+		response.BadRequest(c, "Site logo must be an absolute http(s) URL, a site-relative path, or a supported image data URL")
+		return
+	}
+	req.SEODefaultOGImage = strings.TrimSpace(req.SEODefaultOGImage)
+	if err := validateSEOImageURL(req.SEODefaultOGImage); err != nil {
+		response.BadRequest(c, "Default SEO OG image must be an absolute http(s) URL, a site-relative path, or a supported image data URL")
+		return
+	}
+	req.SEODefaultRobots = strings.TrimSpace(req.SEODefaultRobots)
+	if err := validateSEORobotsValue(req.SEODefaultRobots); err != nil {
+		response.BadRequest(c, "Default SEO robots value is invalid")
+		return
+	}
+	req.SEOHomeRobots = strings.TrimSpace(req.SEOHomeRobots)
+	if err := validateSEORobotsValue(req.SEOHomeRobots); err != nil {
+		response.BadRequest(c, "Home SEO robots value is invalid")
+		return
+	}
+	req.HomeContent = strings.TrimSpace(req.HomeContent)
+	if strings.HasPrefix(req.HomeContent, "http://") || strings.HasPrefix(req.HomeContent, "https://") {
+		response.BadRequest(c, "Home content must be inline public content, not an external URL")
+		return
 	}
 
 	// 自定义菜单项验证
@@ -1027,7 +1188,25 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 				response.BadRequest(c, "Custom menu item URL is too long (max 2048 characters)")
 				return
 			}
-			if err := config.ValidateAbsoluteHTTPURL(strings.TrimSpace(item.URL)); err != nil {
+			trimmedURL := strings.TrimSpace(item.URL)
+			pageSlug := strings.TrimSpace(item.PageSlug)
+			isMarkdownURL := strings.HasPrefix(trimmedURL, "md:") && strings.TrimSpace(strings.TrimPrefix(trimmedURL, "md:")) != ""
+			if !isMarkdownURL && pageSlug == "" {
+				response.BadRequest(c, "Custom menu item must reference markdown content via page_slug or md: URL")
+				return
+			} else if isMarkdownURL && pageSlug == "" {
+				pageSlug = strings.TrimSpace(strings.TrimPrefix(trimmedURL, "md:"))
+				items[i].PageSlug = pageSlug
+			}
+			if pageSlug != "" && !isValidPublicPageSlug(pageSlug) {
+				response.BadRequest(c, "Custom menu item page_slug contains invalid characters")
+				return
+			}
+			if !isMarkdownURL && pageSlug != "" && trimmedURL == "" {
+				response.BadRequest(c, "Custom menu item URL is required")
+				return
+			}
+			if !isMarkdownURL && pageSlug == "" && trimmedURL == "" {
 				response.BadRequest(c, "Custom menu item URL must be an absolute http(s) URL")
 				return
 			}
@@ -1037,6 +1216,14 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			if len(item.IconSVG) > maxMenuItemIconSVGLen {
 				response.BadRequest(c, "Custom menu item icon SVG is too large (max 10KB)")
+				return
+			}
+			if err := validateSEOImageURL(item.SEOOGImage); err != nil {
+				response.BadRequest(c, "Custom menu item SEO OG image must be an absolute http(s) URL, a site-relative path, or a supported image data URL")
+				return
+			}
+			if err := validateSEORobotsValue(item.SEORobots); err != nil {
+				response.BadRequest(c, "Custom menu item SEO robots value is invalid")
 				return
 			}
 			// Auto-generate ID if missing
@@ -1155,6 +1342,14 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			return
 		}
 	}
+	if req.AntigravityUserAgentVersion != nil {
+		normalized := strings.TrimSpace(*req.AntigravityUserAgentVersion)
+		req.AntigravityUserAgentVersion = &normalized
+		if normalized != "" && !semverPattern.MatchString(normalized) {
+			response.Error(c, http.StatusBadRequest, "antigravity_user_agent_version must be empty or a valid semver (e.g. 1.23.2)")
+			return
+		}
+	}
 
 	// 交叉验证：如果同时设置了最低和最高版本号，最高版本号必须 >= 最低版本号
 	if req.MinClaudeCodeVersion != "" && req.MaxClaudeCodeVersion != "" {
@@ -1229,6 +1424,16 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		OIDCConnectUserInfoEmailPath:     req.OIDCConnectUserInfoEmailPath,
 		OIDCConnectUserInfoIDPath:        req.OIDCConnectUserInfoIDPath,
 		OIDCConnectUserInfoUsernamePath:  req.OIDCConnectUserInfoUsernamePath,
+		GitHubOAuthEnabled:               req.GitHubOAuthEnabled,
+		GitHubOAuthClientID:              req.GitHubOAuthClientID,
+		GitHubOAuthClientSecret:          req.GitHubOAuthClientSecret,
+		GitHubOAuthRedirectURL:           req.GitHubOAuthRedirectURL,
+		GitHubOAuthFrontendRedirectURL:   req.GitHubOAuthFrontendRedirectURL,
+		GoogleOAuthEnabled:               req.GoogleOAuthEnabled,
+		GoogleOAuthClientID:              req.GoogleOAuthClientID,
+		GoogleOAuthClientSecret:          req.GoogleOAuthClientSecret,
+		GoogleOAuthRedirectURL:           req.GoogleOAuthRedirectURL,
+		GoogleOAuthFrontendRedirectURL:   req.GoogleOAuthFrontendRedirectURL,
 		SiteName:                         req.SiteName,
 		SiteLogo:                         req.SiteLogo,
 		SiteSubtitle:                     req.SiteSubtitle,
@@ -1236,6 +1441,13 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ContactInfo:                      req.ContactInfo,
 		DocURL:                           req.DocURL,
 		HomeContent:                      req.HomeContent,
+		SEODefaultTitle:                  req.SEODefaultTitle,
+		SEOHomeTitle:                     req.SEOHomeTitle,
+		SEODefaultDescription:            req.SEODefaultDescription,
+		SEOHomeDescription:               req.SEOHomeDescription,
+		SEODefaultOGImage:                req.SEODefaultOGImage,
+		SEODefaultRobots:                 req.SEODefaultRobots,
+		SEOHomeRobots:                    req.SEOHomeRobots,
 		HideCcsImportButton:              req.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:      purchaseEnabled,
 		PurchaseSubscriptionURL:          purchaseURL,
@@ -1305,6 +1517,18 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 				return *req.EnableAnthropicCacheTTL1hInjection
 			}
 			return previousSettings.EnableAnthropicCacheTTL1hInjection
+		}(),
+		RewriteMessageCacheControl: func() bool {
+			if req.RewriteMessageCacheControl != nil {
+				return *req.RewriteMessageCacheControl
+			}
+			return previousSettings.RewriteMessageCacheControl
+		}(),
+		AntigravityUserAgentVersion: func() string {
+			if req.AntigravityUserAgentVersion != nil {
+				return *req.AntigravityUserAgentVersion
+			}
+			return previousSettings.AntigravityUserAgentVersion
 		}(),
 		PaymentVisibleMethodAlipaySource: func() string {
 			if req.PaymentVisibleMethodAlipaySource != nil {
@@ -1383,6 +1607,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 				return *req.AvailableChannelsEnabled
 			}
 			return previousSettings.AvailableChannelsEnabled
+		}(),
+		RiskControlEnabled: func() bool {
+			if req.RiskControlEnabled != nil {
+				return *req.RiskControlEnabled
+			}
+			return previousSettings.RiskControlEnabled
 		}(),
 	}
 
@@ -1561,6 +1791,16 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		OIDCConnectUserInfoEmailPath:           updatedSettings.OIDCConnectUserInfoEmailPath,
 		OIDCConnectUserInfoIDPath:              updatedSettings.OIDCConnectUserInfoIDPath,
 		OIDCConnectUserInfoUsernamePath:        updatedSettings.OIDCConnectUserInfoUsernamePath,
+		GitHubOAuthEnabled:                     updatedSettings.GitHubOAuthEnabled,
+		GitHubOAuthClientID:                    updatedSettings.GitHubOAuthClientID,
+		GitHubOAuthClientSecretConfigured:      updatedSettings.GitHubOAuthClientSecretConfigured,
+		GitHubOAuthRedirectURL:                 updatedSettings.GitHubOAuthRedirectURL,
+		GitHubOAuthFrontendRedirectURL:         updatedSettings.GitHubOAuthFrontendRedirectURL,
+		GoogleOAuthEnabled:                     updatedSettings.GoogleOAuthEnabled,
+		GoogleOAuthClientID:                    updatedSettings.GoogleOAuthClientID,
+		GoogleOAuthClientSecretConfigured:      updatedSettings.GoogleOAuthClientSecretConfigured,
+		GoogleOAuthRedirectURL:                 updatedSettings.GoogleOAuthRedirectURL,
+		GoogleOAuthFrontendRedirectURL:         updatedSettings.GoogleOAuthFrontendRedirectURL,
 		SiteName:                               updatedSettings.SiteName,
 		SiteLogo:                               updatedSettings.SiteLogo,
 		SiteSubtitle:                           updatedSettings.SiteSubtitle,
@@ -1568,6 +1808,13 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ContactInfo:                            updatedSettings.ContactInfo,
 		DocURL:                                 updatedSettings.DocURL,
 		HomeContent:                            updatedSettings.HomeContent,
+		SEODefaultTitle:                        updatedSettings.SEODefaultTitle,
+		SEOHomeTitle:                           updatedSettings.SEOHomeTitle,
+		SEODefaultDescription:                  updatedSettings.SEODefaultDescription,
+		SEOHomeDescription:                     updatedSettings.SEOHomeDescription,
+		SEODefaultOGImage:                      updatedSettings.SEODefaultOGImage,
+		SEODefaultRobots:                       updatedSettings.SEODefaultRobots,
+		SEOHomeRobots:                          updatedSettings.SEOHomeRobots,
 		HideCcsImportButton:                    updatedSettings.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:            updatedSettings.PurchaseSubscriptionEnabled,
 		PurchaseSubscriptionURL:                updatedSettings.PurchaseSubscriptionURL,
@@ -1598,6 +1845,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		EnableMetadataPassthrough:              updatedSettings.EnableMetadataPassthrough,
 		EnableCCHSigning:                       updatedSettings.EnableCCHSigning,
 		EnableAnthropicCacheTTL1hInjection:     updatedSettings.EnableAnthropicCacheTTL1hInjection,
+		RewriteMessageCacheControl:             updatedSettings.RewriteMessageCacheControl,
+		AntigravityUserAgentVersion:            updatedSettings.AntigravityUserAgentVersion,
 		PaymentVisibleMethodAlipaySource:       updatedSettings.PaymentVisibleMethodAlipaySource,
 		PaymentVisibleMethodWxpaySource:        updatedSettings.PaymentVisibleMethodWxpaySource,
 		PaymentVisibleMethodAlipayEnabled:      updatedSettings.PaymentVisibleMethodAlipayEnabled,
@@ -1633,6 +1882,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ChannelMonitorDefaultIntervalSeconds: updatedSettings.ChannelMonitorDefaultIntervalSeconds,
 
 		AvailableChannelsEnabled: updatedSettings.AvailableChannelsEnabled,
+		RiskControlEnabled:       updatedSettings.RiskControlEnabled,
 	}
 	if fastPolicy, err := h.settingService.GetOpenAIFastPolicySettings(c.Request.Context()); err != nil {
 		slog.Error("openai_fast_policy_settings_get_failed", "error", err)
@@ -1978,6 +2228,12 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.EnableAnthropicCacheTTL1hInjection != after.EnableAnthropicCacheTTL1hInjection {
 		changed = append(changed, "enable_anthropic_cache_ttl_1h_injection")
 	}
+	if before.RewriteMessageCacheControl != after.RewriteMessageCacheControl {
+		changed = append(changed, "rewrite_message_cache_control")
+	}
+	if before.AntigravityUserAgentVersion != after.AntigravityUserAgentVersion {
+		changed = append(changed, "antigravity_user_agent_version")
+	}
 	if before.PaymentVisibleMethodAlipaySource != after.PaymentVisibleMethodAlipaySource {
 		changed = append(changed, "payment_visible_method_alipay_source")
 	}
@@ -2017,6 +2273,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.AvailableChannelsEnabled != after.AvailableChannelsEnabled {
 		changed = append(changed, "available_channels_enabled")
+	}
+	if before.RiskControlEnabled != after.RiskControlEnabled {
+		changed = append(changed, "risk_control_enabled")
 	}
 	changed = appendAuthSourceDefaultChanges(changed, beforeAuthSourceDefaults, afterAuthSourceDefaults)
 	return changed

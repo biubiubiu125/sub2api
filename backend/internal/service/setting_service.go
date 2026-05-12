@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/antigravity"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/imroc/req/v3"
 	"golang.org/x/sync/singleflight"
@@ -86,6 +87,7 @@ type cachedGatewayForwardingSettings struct {
 	metadataPassthrough          bool
 	cchSigning                   bool
 	anthropicCacheTTL1hInjection bool
+	rewriteMessageCacheControl   bool
 	expiresAt                    int64 // unix nano
 }
 
@@ -95,6 +97,16 @@ var gatewayForwardingSF singleflight.Group
 const gatewayForwardingCacheTTL = 60 * time.Second
 const gatewayForwardingErrorTTL = 5 * time.Second
 const gatewayForwardingDBTimeout = 5 * time.Second
+
+// cachedAntigravityUserAgentVersion 缓存 Antigravity UA 版本号（进程内缓存，60s TTL）
+type cachedAntigravityUserAgentVersion struct {
+	version   string
+	expiresAt int64 // unix nano
+}
+
+const antigravityUserAgentVersionCacheTTL = 60 * time.Second
+const antigravityUserAgentVersionErrorTTL = 5 * time.Second
+const antigravityUserAgentVersionDBTimeout = 5 * time.Second
 
 // DefaultSubscriptionGroupReader validates group references used by default subscriptions.
 type DefaultSubscriptionGroupReader interface {
@@ -107,13 +119,15 @@ type WebSearchManagerBuilder func(cfg *WebSearchEmulationConfig, proxyURLs map[i
 
 // SettingService 系统设置服务
 type SettingService struct {
-	settingRepo             SettingRepository
-	defaultSubGroupReader   DefaultSubscriptionGroupReader
-	proxyRepo               ProxyRepository // for resolving websearch provider proxy URLs
-	cfg                     *config.Config
-	onUpdate                func() // Callback when settings are updated (for cache invalidation)
-	version                 string // Application version
-	webSearchManagerBuilder WebSearchManagerBuilder
+	settingRepo               SettingRepository
+	defaultSubGroupReader     DefaultSubscriptionGroupReader
+	proxyRepo                 ProxyRepository // for resolving websearch provider proxy URLs
+	cfg                       *config.Config
+	onUpdate                  func() // Callback when settings are updated (for cache invalidation)
+	version                   string // Application version
+	webSearchManagerBuilder   WebSearchManagerBuilder
+	antigravityUAVersionCache atomic.Value // *cachedAntigravityUserAgentVersion
+	antigravityUAVersionSF    singleflight.Group
 }
 
 type ProviderDefaultGrantSettings struct {
@@ -286,9 +300,13 @@ func normalizeLoginAgreementDocuments(docs []LoginAgreementDocument) []LoginAgre
 		}
 		seen[id]++
 		normalized = append(normalized, LoginAgreementDocument{
-			ID:        id,
-			Title:     title,
-			ContentMD: content,
+			ID:             id,
+			Title:          title,
+			ContentMD:      content,
+			SEOTitle:       strings.TrimSpace(doc.SEOTitle),
+			SEODescription: strings.TrimSpace(doc.SEODescription),
+			SEOOGImage:     strings.TrimSpace(doc.SEOOGImage),
+			SEORobots:      strings.TrimSpace(doc.SEORobots),
 		})
 	}
 	return normalized
@@ -569,6 +587,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyPromoCodeEnabled,
 		SettingKeyPasswordResetEnabled,
 		SettingKeyInvitationCodeEnabled,
+		SettingKeyFrontendURL,
 		SettingKeyTotpEnabled,
 		SettingKeyLoginAgreementEnabled,
 		SettingKeyLoginAgreementMode,
@@ -583,6 +602,13 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyContactInfo,
 		SettingKeyDocURL,
 		SettingKeyHomeContent,
+		SettingKeySEODefaultTitle,
+		SettingKeySEOHomeTitle,
+		SettingKeySEODefaultDescription,
+		SettingKeySEOHomeDescription,
+		SettingKeySEODefaultOGImage,
+		SettingKeySEODefaultRobots,
+		SettingKeySEOHomeRobots,
 		SettingKeyHideCcsImportButton,
 		SettingKeyPurchaseSubscriptionEnabled,
 		SettingKeyPurchaseSubscriptionURL,
@@ -700,6 +726,13 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		ContactInfo:                      settings[SettingKeyContactInfo],
 		DocURL:                           settings[SettingKeyDocURL],
 		HomeContent:                      settings[SettingKeyHomeContent],
+		SEODefaultTitle:                  settings[SettingKeySEODefaultTitle],
+		SEOHomeTitle:                     settings[SettingKeySEOHomeTitle],
+		SEODefaultDescription:            settings[SettingKeySEODefaultDescription],
+		SEOHomeDescription:               settings[SettingKeySEOHomeDescription],
+		SEODefaultOGImage:                settings[SettingKeySEODefaultOGImage],
+		SEODefaultRobots:                 settings[SettingKeySEODefaultRobots],
+		SEOHomeRobots:                    settings[SettingKeySEOHomeRobots],
 		HideCcsImportButton:              settings[SettingKeyHideCcsImportButton] == "true",
 		PurchaseSubscriptionEnabled:      settings[SettingKeyPurchaseSubscriptionEnabled] == "true",
 		PurchaseSubscriptionURL:          strings.TrimSpace(settings[SettingKeyPurchaseSubscriptionURL]),
@@ -806,6 +839,55 @@ func (s *SettingService) GetAvailableChannelsRuntime(ctx context.Context) Availa
 	}
 }
 
+// GetAntigravityUserAgentVersion 返回 Antigravity 上游请求使用的版本号。
+// 后台设置优先；为空、缺失或非法时回退到 ANTIGRAVITY_USER_AGENT_VERSION / 内置默认值。
+func (s *SettingService) GetAntigravityUserAgentVersion(ctx context.Context) string {
+	fallback := antigravity.GetDefaultUserAgentVersion()
+	if s == nil || s.settingRepo == nil {
+		return fallback
+	}
+	if cached, ok := s.antigravityUAVersionCache.Load().(*cachedAntigravityUserAgentVersion); ok && cached != nil {
+		if time.Now().UnixNano() < cached.expiresAt {
+			return cached.version
+		}
+	}
+
+	result, _, _ := s.antigravityUAVersionSF.Do("antigravity_user_agent_version", func() (any, error) {
+		if cached, ok := s.antigravityUAVersionCache.Load().(*cachedAntigravityUserAgentVersion); ok && cached != nil {
+			if time.Now().UnixNano() < cached.expiresAt {
+				return cached.version, nil
+			}
+		}
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		dbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), antigravityUserAgentVersionDBTimeout)
+		defer cancel()
+		value, err := s.settingRepo.GetValue(dbCtx, SettingKeyAntigravityUserAgentVersion)
+		if err != nil && !errors.Is(err, ErrSettingNotFound) {
+			slog.Warn("failed to get antigravity user agent version setting", "error", err)
+			s.antigravityUAVersionCache.Store(&cachedAntigravityUserAgentVersion{
+				version:   fallback,
+				expiresAt: time.Now().Add(antigravityUserAgentVersionErrorTTL).UnixNano(),
+			})
+			return fallback, nil
+		}
+		version := antigravity.NormalizeUserAgentVersion(value)
+		if version == "" {
+			version = fallback
+		}
+		s.antigravityUAVersionCache.Store(&cachedAntigravityUserAgentVersion{
+			version:   version,
+			expiresAt: time.Now().Add(antigravityUserAgentVersionCacheTTL).UnixNano(),
+		})
+		return version, nil
+	})
+	if version, ok := result.(string); ok && version != "" {
+		return version
+	}
+	return fallback
+}
+
 // SetOnUpdateCallback sets a callback function to be called when settings are updated
 // This is used for cache invalidation (e.g., HTML cache in frontend server)
 func (s *SettingService) SetOnUpdateCallback(callback func()) {
@@ -833,10 +915,12 @@ func (s *SettingService) SetVersion(version string) {
 type PublicSettingsInjectionPayload struct {
 	RegistrationEnabled              bool                     `json:"registration_enabled"`
 	EmailVerifyEnabled               bool                     `json:"email_verify_enabled"`
+	ForceEmailOnThirdPartySignup     bool                     `json:"force_email_on_third_party_signup"`
 	RegistrationEmailSuffixWhitelist []string                 `json:"registration_email_suffix_whitelist"`
 	PromoCodeEnabled                 bool                     `json:"promo_code_enabled"`
 	PasswordResetEnabled             bool                     `json:"password_reset_enabled"`
 	InvitationCodeEnabled            bool                     `json:"invitation_code_enabled"`
+	FrontendURL                      string                   `json:"frontend_url"`
 	TotpEnabled                      bool                     `json:"totp_enabled"`
 	LoginAgreementEnabled            bool                     `json:"login_agreement_enabled"`
 	LoginAgreementMode               string                   `json:"login_agreement_mode"`
@@ -852,6 +936,13 @@ type PublicSettingsInjectionPayload struct {
 	ContactInfo                      string                   `json:"contact_info"`
 	DocURL                           string                   `json:"doc_url"`
 	HomeContent                      string                   `json:"home_content"`
+	SEODefaultTitle                  string                   `json:"seo_default_title,omitempty"`
+	SEOHomeTitle                     string                   `json:"seo_home_title,omitempty"`
+	SEODefaultDescription            string                   `json:"seo_default_description,omitempty"`
+	SEOHomeDescription               string                   `json:"seo_home_description,omitempty"`
+	SEODefaultOGImage                string                   `json:"seo_default_og_image,omitempty"`
+	SEODefaultRobots                 string                   `json:"seo_default_robots,omitempty"`
+	SEOHomeRobots                    string                   `json:"seo_home_robots,omitempty"`
 	HideCcsImportButton              bool                     `json:"hide_ccs_import_button"`
 	PurchaseSubscriptionEnabled      bool                     `json:"purchase_subscription_enabled"`
 	PurchaseSubscriptionURL          string                   `json:"purchase_subscription_url"`
@@ -867,7 +958,15 @@ type PublicSettingsInjectionPayload struct {
 	OIDCOAuthEnabled                 bool                     `json:"oidc_oauth_enabled"`
 	OIDCOAuthProviderName            string                   `json:"oidc_oauth_provider_name"`
 	GitHubOAuthEnabled               bool                     `json:"github_oauth_enabled"`
+	GitHubOAuthClientID              string                   `json:"github_oauth_client_id"`
+	GitHubOAuthClientSecretConfigured bool                    `json:"github_oauth_client_secret_configured"`
+	GitHubOAuthRedirectURL           string                   `json:"github_oauth_redirect_url"`
+	GitHubOAuthFrontendRedirectURL   string                   `json:"github_oauth_frontend_redirect_url"`
 	GoogleOAuthEnabled               bool                     `json:"google_oauth_enabled"`
+	GoogleOAuthClientID              string                   `json:"google_oauth_client_id"`
+	GoogleOAuthClientSecretConfigured bool                    `json:"google_oauth_client_secret_configured"`
+	GoogleOAuthRedirectURL           string                   `json:"google_oauth_redirect_url"`
+	GoogleOAuthFrontendRedirectURL   string                   `json:"google_oauth_frontend_redirect_url"`
 	BackendModeEnabled               bool                     `json:"backend_mode_enabled"`
 	PaymentEnabled                   bool                     `json:"payment_enabled"`
 	Version                          string                   `json:"version"`
@@ -897,10 +996,12 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 	return &PublicSettingsInjectionPayload{
 		RegistrationEnabled:              settings.RegistrationEnabled,
 		EmailVerifyEnabled:               settings.EmailVerifyEnabled,
+		ForceEmailOnThirdPartySignup:     settings.ForceEmailOnThirdPartySignup,
 		RegistrationEmailSuffixWhitelist: settings.RegistrationEmailSuffixWhitelist,
 		PromoCodeEnabled:                 settings.PromoCodeEnabled,
 		PasswordResetEnabled:             settings.PasswordResetEnabled,
 		InvitationCodeEnabled:            settings.InvitationCodeEnabled,
+		FrontendURL:                      s.GetFrontendURL(ctx),
 		TotpEnabled:                      settings.TotpEnabled,
 		LoginAgreementEnabled:            settings.LoginAgreementEnabled,
 		LoginAgreementMode:               settings.LoginAgreementMode,
@@ -916,6 +1017,13 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		ContactInfo:                      settings.ContactInfo,
 		DocURL:                           settings.DocURL,
 		HomeContent:                      settings.HomeContent,
+		SEODefaultTitle:                  settings.SEODefaultTitle,
+		SEOHomeTitle:                     settings.SEOHomeTitle,
+		SEODefaultDescription:            settings.SEODefaultDescription,
+		SEOHomeDescription:               settings.SEOHomeDescription,
+		SEODefaultOGImage:                settings.SEODefaultOGImage,
+		SEODefaultRobots:                 settings.SEODefaultRobots,
+		SEOHomeRobots:                    settings.SEOHomeRobots,
 		HideCcsImportButton:              settings.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:      settings.PurchaseSubscriptionEnabled,
 		PurchaseSubscriptionURL:          settings.PurchaseSubscriptionURL,
@@ -1146,8 +1254,9 @@ func safeRawJSONArray(raw string) json.RawMessage {
 	return json.RawMessage("[]")
 }
 
-// GetFrameSrcOrigins returns deduplicated http(s) origins from home_content URL,
-// purchase_subscription_url, and all custom_menu_items URLs. Used by the router layer for CSP frame-src injection.
+// GetFrameSrcOrigins returns deduplicated http(s) origins from purchase_subscription_url.
+// Public content pages no longer allow external iframe embedding, so public content
+// settings are intentionally excluded from frame-src.
 func (s *SettingService) GetFrameSrcOrigins(ctx context.Context) ([]string, error) {
 	settings, err := s.GetPublicSettings(ctx)
 	if err != nil {
@@ -1166,17 +1275,9 @@ func (s *SettingService) GetFrameSrcOrigins(ctx context.Context) ([]string, erro
 		}
 	}
 
-	// home content URL (when home_content is set to a URL for iframe embedding)
-	addOrigin(settings.HomeContent)
-
 	// purchase subscription URL
 	if settings.PurchaseSubscriptionEnabled {
 		addOrigin(settings.PurchaseSubscriptionURL)
-	}
-
-	// all custom menu items (including admin-only, since CSP must allow all iframes)
-	for _, item := range parseCustomMenuItemURLs(settings.CustomMenuItems) {
-		addOrigin(item)
 	}
 
 	return origins, nil
@@ -1197,27 +1298,6 @@ func extractOriginFromURL(rawURL string) string {
 		return ""
 	}
 	return u.Scheme + "://" + u.Host
-}
-
-// parseCustomMenuItemURLs extracts URLs from a raw JSON array of custom menu items.
-func parseCustomMenuItemURLs(raw string) []string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" || raw == "[]" {
-		return nil
-	}
-	var items []struct {
-		URL string `json:"url"`
-	}
-	if err := json.Unmarshal([]byte(raw), &items); err != nil {
-		return nil
-	}
-	urls := make([]string, 0, len(items))
-	for _, item := range items {
-		if item.URL != "" {
-			urls = append(urls, item.URL)
-		}
-	}
-	return urls
 }
 
 func oidcUsePKCECompatibilityDefault(base config.OIDCConnectConfig) bool {
@@ -1426,6 +1506,22 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 		updates[SettingKeyOIDCConnectClientSecret] = settings.OIDCConnectClientSecret
 	}
 
+	updates[SettingKeyGitHubOAuthEnabled] = strconv.FormatBool(settings.GitHubOAuthEnabled)
+	updates[SettingKeyGitHubOAuthClientID] = strings.TrimSpace(settings.GitHubOAuthClientID)
+	updates[SettingKeyGitHubOAuthRedirectURL] = strings.TrimSpace(settings.GitHubOAuthRedirectURL)
+	updates[SettingKeyGitHubOAuthFrontendRedirectURL] = strings.TrimSpace(settings.GitHubOAuthFrontendRedirectURL)
+	if settings.GitHubOAuthClientSecret != "" {
+		updates[SettingKeyGitHubOAuthClientSecret] = settings.GitHubOAuthClientSecret
+	}
+
+	updates[SettingKeyGoogleOAuthEnabled] = strconv.FormatBool(settings.GoogleOAuthEnabled)
+	updates[SettingKeyGoogleOAuthClientID] = strings.TrimSpace(settings.GoogleOAuthClientID)
+	updates[SettingKeyGoogleOAuthRedirectURL] = strings.TrimSpace(settings.GoogleOAuthRedirectURL)
+	updates[SettingKeyGoogleOAuthFrontendRedirectURL] = strings.TrimSpace(settings.GoogleOAuthFrontendRedirectURL)
+	if settings.GoogleOAuthClientSecret != "" {
+		updates[SettingKeyGoogleOAuthClientSecret] = settings.GoogleOAuthClientSecret
+	}
+
 	// WeChat Connect OAuth 登录
 	updates[SettingKeyWeChatConnectEnabled] = strconv.FormatBool(settings.WeChatConnectEnabled)
 	updates[SettingKeyWeChatConnectAppID] = settings.WeChatConnectAppID
@@ -1460,6 +1556,13 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyContactInfo] = settings.ContactInfo
 	updates[SettingKeyDocURL] = settings.DocURL
 	updates[SettingKeyHomeContent] = settings.HomeContent
+	updates[SettingKeySEODefaultTitle] = settings.SEODefaultTitle
+	updates[SettingKeySEOHomeTitle] = settings.SEOHomeTitle
+	updates[SettingKeySEODefaultDescription] = settings.SEODefaultDescription
+	updates[SettingKeySEOHomeDescription] = settings.SEOHomeDescription
+	updates[SettingKeySEODefaultOGImage] = settings.SEODefaultOGImage
+	updates[SettingKeySEODefaultRobots] = settings.SEODefaultRobots
+	updates[SettingKeySEOHomeRobots] = settings.SEOHomeRobots
 	updates[SettingKeyHideCcsImportButton] = strconv.FormatBool(settings.HideCcsImportButton)
 	updates[SettingKeyPurchaseSubscriptionEnabled] = strconv.FormatBool(settings.PurchaseSubscriptionEnabled)
 	updates[SettingKeyPurchaseSubscriptionURL] = strings.TrimSpace(settings.PurchaseSubscriptionURL)
@@ -1532,6 +1635,8 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyEnableMetadataPassthrough] = strconv.FormatBool(settings.EnableMetadataPassthrough)
 	updates[SettingKeyEnableCCHSigning] = strconv.FormatBool(settings.EnableCCHSigning)
 	updates[SettingKeyEnableAnthropicCacheTTL1hInjection] = strconv.FormatBool(settings.EnableAnthropicCacheTTL1hInjection)
+	updates[SettingKeyRewriteMessageCacheControl] = strconv.FormatBool(settings.RewriteMessageCacheControl)
+	updates[SettingKeyAntigravityUserAgentVersion] = antigravity.NormalizeUserAgentVersion(settings.AntigravityUserAgentVersion)
 	updates[SettingPaymentVisibleMethodAlipaySource] = settings.PaymentVisibleMethodAlipaySource
 	updates[SettingPaymentVisibleMethodWxpaySource] = settings.PaymentVisibleMethodWxpaySource
 	updates[SettingPaymentVisibleMethodAlipayEnabled] = strconv.FormatBool(settings.PaymentVisibleMethodAlipayEnabled)
@@ -1600,7 +1705,17 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 		metadataPassthrough:          settings.EnableMetadataPassthrough,
 		cchSigning:                   settings.EnableCCHSigning,
 		anthropicCacheTTL1hInjection: settings.EnableAnthropicCacheTTL1hInjection,
+		rewriteMessageCacheControl:   settings.RewriteMessageCacheControl,
 		expiresAt:                    time.Now().Add(gatewayForwardingCacheTTL).UnixNano(),
+	})
+	s.antigravityUAVersionSF.Forget("antigravity_user_agent_version")
+	antigravityUserAgentVersion := antigravity.NormalizeUserAgentVersion(settings.AntigravityUserAgentVersion)
+	if antigravityUserAgentVersion == "" {
+		antigravityUserAgentVersion = antigravity.GetDefaultUserAgentVersion()
+	}
+	s.antigravityUAVersionCache.Store(&cachedAntigravityUserAgentVersion{
+		version:   antigravityUserAgentVersion,
+		expiresAt: time.Now().Add(antigravityUserAgentVersionCacheTTL).UnixNano(),
 	})
 	openAIAdvancedSchedulerSettingSF.Forget(openAIAdvancedSchedulerSettingKey)
 	openAIAdvancedSchedulerSettingCache.Store(&cachedOpenAIAdvancedSchedulerSetting{
@@ -1610,6 +1725,10 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 	if s.onUpdate != nil {
 		s.onUpdate() // Invalidate cache after settings update
 	}
+}
+
+func (s *SettingService) defaultRewriteMessageCacheControl() bool {
+	return false
 }
 
 func (s *SettingService) validateDefaultSubscriptionGroups(ctx context.Context, items []DefaultSubscriptionSetting) error {
@@ -1708,17 +1827,18 @@ func (s *SettingService) IsBackendModeEnabled(ctx context.Context) bool {
 }
 
 type gatewayForwardingSettingsResult struct {
-	fp, mp, cch, cacheTTL1h bool
+	fp, mp, cch, cacheTTL1h, rewriteMessageCacheControl bool
 }
 
 func (s *SettingService) getGatewayForwardingSettingsCached(ctx context.Context) gatewayForwardingSettingsResult {
 	if cached, ok := gatewayForwardingCache.Load().(*cachedGatewayForwardingSettings); ok && cached != nil {
 		if time.Now().UnixNano() < cached.expiresAt {
 			return gatewayForwardingSettingsResult{
-				fp:         cached.fingerprintUnification,
-				mp:         cached.metadataPassthrough,
-				cch:        cached.cchSigning,
-				cacheTTL1h: cached.anthropicCacheTTL1hInjection,
+				fp:                         cached.fingerprintUnification,
+				mp:                         cached.metadataPassthrough,
+				cch:                        cached.cchSigning,
+				cacheTTL1h:                 cached.anthropicCacheTTL1hInjection,
+				rewriteMessageCacheControl: cached.rewriteMessageCacheControl,
 			}
 		}
 	}
@@ -1726,10 +1846,11 @@ func (s *SettingService) getGatewayForwardingSettingsCached(ctx context.Context)
 		if cached, ok := gatewayForwardingCache.Load().(*cachedGatewayForwardingSettings); ok && cached != nil {
 			if time.Now().UnixNano() < cached.expiresAt {
 				return gatewayForwardingSettingsResult{
-					fp:         cached.fingerprintUnification,
-					mp:         cached.metadataPassthrough,
-					cch:        cached.cchSigning,
-					cacheTTL1h: cached.anthropicCacheTTL1hInjection,
+					fp:                         cached.fingerprintUnification,
+					mp:                         cached.metadataPassthrough,
+					cch:                        cached.cchSigning,
+					cacheTTL1h:                 cached.anthropicCacheTTL1hInjection,
+					rewriteMessageCacheControl: cached.rewriteMessageCacheControl,
 				}, nil
 			}
 		}
@@ -1740,6 +1861,7 @@ func (s *SettingService) getGatewayForwardingSettingsCached(ctx context.Context)
 			SettingKeyEnableMetadataPassthrough,
 			SettingKeyEnableCCHSigning,
 			SettingKeyEnableAnthropicCacheTTL1hInjection,
+			SettingKeyRewriteMessageCacheControl,
 		})
 		if err != nil {
 			slog.Warn("failed to get gateway forwarding settings", "error", err)
@@ -1748,9 +1870,10 @@ func (s *SettingService) getGatewayForwardingSettingsCached(ctx context.Context)
 				metadataPassthrough:          false,
 				cchSigning:                   false,
 				anthropicCacheTTL1hInjection: false,
+				rewriteMessageCacheControl:   s.defaultRewriteMessageCacheControl(),
 				expiresAt:                    time.Now().Add(gatewayForwardingErrorTTL).UnixNano(),
 			})
-			return gatewayForwardingSettingsResult{fp: true}, nil
+			return gatewayForwardingSettingsResult{fp: true, rewriteMessageCacheControl: s.defaultRewriteMessageCacheControl()}, nil
 		}
 		fp := true
 		if v, ok := values[SettingKeyEnableFingerprintUnification]; ok && v != "" {
@@ -1759,14 +1882,25 @@ func (s *SettingService) getGatewayForwardingSettingsCached(ctx context.Context)
 		mp := values[SettingKeyEnableMetadataPassthrough] == "true"
 		cch := values[SettingKeyEnableCCHSigning] == "true"
 		cacheTTL1h := values[SettingKeyEnableAnthropicCacheTTL1hInjection] == "true"
+		rewriteMessageCacheControl := s.defaultRewriteMessageCacheControl()
+		if v, ok := values[SettingKeyRewriteMessageCacheControl]; ok && v != "" {
+			rewriteMessageCacheControl = v == "true"
+		}
 		gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
 			fingerprintUnification:       fp,
 			metadataPassthrough:          mp,
 			cchSigning:                   cch,
 			anthropicCacheTTL1hInjection: cacheTTL1h,
+			rewriteMessageCacheControl:   rewriteMessageCacheControl,
 			expiresAt:                    time.Now().Add(gatewayForwardingCacheTTL).UnixNano(),
 		})
-		return gatewayForwardingSettingsResult{fp: fp, mp: mp, cch: cch, cacheTTL1h: cacheTTL1h}, nil
+		return gatewayForwardingSettingsResult{
+			fp:                         fp,
+			mp:                         mp,
+			cch:                        cch,
+			cacheTTL1h:                 cacheTTL1h,
+			rewriteMessageCacheControl: rewriteMessageCacheControl,
+		}, nil
 	})
 	if r, ok := val.(gatewayForwardingSettingsResult); ok {
 		return r
@@ -1785,6 +1919,11 @@ func (s *SettingService) GetGatewayForwardingSettings(ctx context.Context) (fing
 // IsAnthropicCacheTTL1hInjectionEnabled 检查是否对 Anthropic OAuth/SetupToken 请求体注入 1h cache_control ttl。
 func (s *SettingService) IsAnthropicCacheTTL1hInjectionEnabled(ctx context.Context) bool {
 	return s.getGatewayForwardingSettingsCached(ctx).cacheTTL1h
+}
+
+// IsRewriteMessageCacheControlEnabled 检查是否启用 messages cache_control 改写。
+func (s *SettingService) IsRewriteMessageCacheControlEnabled(ctx context.Context) bool {
+	return s.getGatewayForwardingSettingsCached(ctx).rewriteMessageCacheControl
 }
 
 // IsEmailVerifyEnabled 检查是否开启邮件验证
@@ -2115,6 +2254,16 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyOIDCConnectUserInfoEmailPath:             "",
 		SettingKeyOIDCConnectUserInfoIDPath:                "",
 		SettingKeyOIDCConnectUserInfoUsernamePath:          "",
+		SettingKeyGitHubOAuthEnabled:                       "false",
+		SettingKeyGitHubOAuthClientID:                      "",
+		SettingKeyGitHubOAuthClientSecret:                  "",
+		SettingKeyGitHubOAuthRedirectURL:                   "",
+		SettingKeyGitHubOAuthFrontendRedirectURL:           defaultGitHubOAuthFrontend,
+		SettingKeyGoogleOAuthEnabled:                       "false",
+		SettingKeyGoogleOAuthClientID:                      "",
+		SettingKeyGoogleOAuthClientSecret:                  "",
+		SettingKeyGoogleOAuthRedirectURL:                   "",
+		SettingKeyGoogleOAuthFrontendRedirectURL:           defaultGoogleOAuthFrontend,
 		SettingKeyDefaultConcurrency:                       strconv.Itoa(s.cfg.Default.UserConcurrency),
 		SettingKeyDefaultBalance:                           strconv.FormatFloat(s.cfg.Default.UserBalance, 'f', 8, 64),
 		SettingKeyDefaultUserRPMLimit:                      "0",
@@ -2172,6 +2321,8 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		// 分组隔离（默认不允许未分组 Key 调度）
 		SettingKeyAllowUngroupedKeyScheduling:        "false",
 		SettingKeyEnableAnthropicCacheTTL1hInjection: "false",
+		SettingKeyRewriteMessageCacheControl:         strconv.FormatBool(s.defaultRewriteMessageCacheControl()),
+		SettingKeyAntigravityUserAgentVersion:        "",
 		SettingPaymentVisibleMethodAlipaySource:      "",
 		SettingPaymentVisibleMethodWxpaySource:       "",
 		SettingPaymentVisibleMethodAlipayEnabled:     "false",
@@ -2219,6 +2370,13 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		ContactInfo:                      settings[SettingKeyContactInfo],
 		DocURL:                           settings[SettingKeyDocURL],
 		HomeContent:                      settings[SettingKeyHomeContent],
+		SEODefaultTitle:                  settings[SettingKeySEODefaultTitle],
+		SEOHomeTitle:                     settings[SettingKeySEOHomeTitle],
+		SEODefaultDescription:            settings[SettingKeySEODefaultDescription],
+		SEOHomeDescription:               settings[SettingKeySEOHomeDescription],
+		SEODefaultOGImage:                settings[SettingKeySEODefaultOGImage],
+		SEODefaultRobots:                 settings[SettingKeySEODefaultRobots],
+		SEOHomeRobots:                    settings[SettingKeySEOHomeRobots],
 		HideCcsImportButton:              settings[SettingKeyHideCcsImportButton] == "true",
 		PurchaseSubscriptionEnabled:      settings[SettingKeyPurchaseSubscriptionEnabled] == "true",
 		PurchaseSubscriptionURL:          strings.TrimSpace(settings[SettingKeyPurchaseSubscriptionURL]),
@@ -2424,6 +2582,22 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	}
 	result.OIDCConnectClientSecretConfigured = result.OIDCConnectClientSecret != ""
 
+	gitHubCfg := s.effectiveEmailOAuthConfig(settings, "github")
+	result.GitHubOAuthEnabled = gitHubCfg.Enabled
+	result.GitHubOAuthClientID = strings.TrimSpace(gitHubCfg.ClientID)
+	result.GitHubOAuthClientSecret = strings.TrimSpace(gitHubCfg.ClientSecret)
+	result.GitHubOAuthClientSecretConfigured = result.GitHubOAuthClientSecret != ""
+	result.GitHubOAuthRedirectURL = strings.TrimSpace(gitHubCfg.RedirectURL)
+	result.GitHubOAuthFrontendRedirectURL = strings.TrimSpace(gitHubCfg.FrontendRedirectURL)
+
+	googleCfg := s.effectiveEmailOAuthConfig(settings, "google")
+	result.GoogleOAuthEnabled = googleCfg.Enabled
+	result.GoogleOAuthClientID = strings.TrimSpace(googleCfg.ClientID)
+	result.GoogleOAuthClientSecret = strings.TrimSpace(googleCfg.ClientSecret)
+	result.GoogleOAuthClientSecretConfigured = result.GoogleOAuthClientSecret != ""
+	result.GoogleOAuthRedirectURL = strings.TrimSpace(googleCfg.RedirectURL)
+	result.GoogleOAuthFrontendRedirectURL = strings.TrimSpace(googleCfg.FrontendRedirectURL)
+
 	// WeChat Connect 设置：
 	// - 优先读取 DB 系统设置
 	// - 缺失时回退到 config/env，保持升级兼容
@@ -2509,6 +2683,12 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.EnableMetadataPassthrough = settings[SettingKeyEnableMetadataPassthrough] == "true"
 	result.EnableCCHSigning = settings[SettingKeyEnableCCHSigning] == "true"
 	result.EnableAnthropicCacheTTL1hInjection = settings[SettingKeyEnableAnthropicCacheTTL1hInjection] == "true"
+	if v, ok := settings[SettingKeyRewriteMessageCacheControl]; ok && v != "" {
+		result.RewriteMessageCacheControl = v == "true"
+	} else {
+		result.RewriteMessageCacheControl = s.defaultRewriteMessageCacheControl()
+	}
+	result.AntigravityUserAgentVersion = antigravity.NormalizeUserAgentVersion(settings[SettingKeyAntigravityUserAgentVersion])
 
 	// Web search emulation: quick enabled check from the JSON config
 	if raw := settings[SettingKeyWebSearchEmulationConfig]; raw != "" {

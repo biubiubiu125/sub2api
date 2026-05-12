@@ -35,6 +35,7 @@ func ProvideAdminHandlers(
 	apiKeyHandler *admin.AdminAPIKeyHandler,
 	scheduledTestHandler *admin.ScheduledTestHandler,
 	channelHandler *admin.ChannelHandler,
+	providerPriceAdminHandler *admin.ProviderPriceHandler,
 	channelMonitorHandler *admin.ChannelMonitorHandler,
 	channelMonitorTemplateHandler *admin.ChannelMonitorRequestTemplateHandler,
 	contentModerationHandler *admin.ContentModerationHandler,
@@ -67,6 +68,7 @@ func ProvideAdminHandlers(
 		APIKey:                 apiKeyHandler,
 		ScheduledTest:          scheduledTestHandler,
 		Channel:                channelHandler,
+		ProviderPrice:          providerPriceAdminHandler,
 		ChannelMonitor:         channelMonitorHandler,
 		ChannelMonitorTemplate: channelMonitorTemplateHandler,
 		ContentModeration:      contentModerationHandler,
@@ -128,6 +130,7 @@ func ProvideHandlers(
 	paymentWebhookHandler *PaymentWebhookHandler,
 	availableChannelHandler *AvailableChannelHandler,
 	referralHandler *ReferralHandler,
+	providerPriceHandler *ProviderPriceHandler,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
 ) *Handlers {
@@ -149,6 +152,7 @@ func ProvideHandlers(
 		PaymentWebhook:   paymentWebhookHandler,
 		AvailableChannel: availableChannelHandler,
 		Referral:         referralHandler,
+		ProviderPrice:    providerPriceHandler,
 	}
 }
 
@@ -171,6 +175,7 @@ var ProviderSet = wire.NewSet(
 	NewPaymentWebhookHandler,
 	NewAvailableChannelHandler,
 	NewReferralHandler,
+	NewProviderPriceHandler,
 
 	// Admin handlers
 	admin.NewDashboardHandler,
@@ -198,6 +203,7 @@ var ProviderSet = wire.NewSet(
 	admin.NewAdminAPIKeyHandler,
 	admin.NewScheduledTestHandler,
 	admin.NewChannelHandler,
+	admin.NewProviderPriceAdminHandler,
 	admin.NewChannelMonitorHandler,
 	admin.NewChannelMonitorRequestTemplateHandler,
 	admin.NewContentModerationHandler,

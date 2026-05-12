@@ -31,6 +31,7 @@ type AdminHandlers struct {
 	APIKey                 *admin.AdminAPIKeyHandler
 	ScheduledTest          *admin.ScheduledTestHandler
 	Channel                *admin.ChannelHandler
+	ProviderPrice          *admin.ProviderPriceHandler
 	ChannelMonitor         *admin.ChannelMonitorHandler
 	ChannelMonitorTemplate *admin.ChannelMonitorRequestTemplateHandler
 	ContentModeration      *admin.ContentModerationHandler
@@ -57,6 +58,7 @@ type Handlers struct {
 	PaymentWebhook   *PaymentWebhookHandler
 	AvailableChannel *AvailableChannelHandler
 	Referral         *ReferralHandler
+	ProviderPrice    *ProviderPriceHandler
 }
 
 // BuildInfo contains build-time information

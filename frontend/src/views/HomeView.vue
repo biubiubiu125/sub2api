@@ -1,15 +1,39 @@
 <template>
-  <!-- Custom Home Content: Full Page Mode -->
-  <div v-if="homeContent" class="min-h-screen">
-    <!-- iframe mode -->
-    <iframe
-      v-if="isHomeContentUrl"
-      :src="homeContent.trim()"
-      class="h-screen w-full border-0"
-      allowfullscreen
-    ></iframe>
-    <!-- HTML mode - SECURITY: homeContent is admin-only setting, XSS risk is acceptable -->
-    <div v-else v-html="homeContent"></div>
+  <!-- Custom Home Content: Public Content Mode -->
+  <div
+    v-if="renderedHomeContent"
+    class="min-h-screen bg-gray-50 text-gray-900 dark:bg-dark-950 dark:text-white"
+  >
+    <header class="border-b border-gray-200 bg-white/95 dark:border-dark-800 dark:bg-dark-900/95">
+      <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
+        <router-link to="/home" class="flex min-w-0 items-center gap-3">
+          <span class="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-dark-800 dark:ring-dark-700">
+            <img :src="siteLogo || '/logo.png'" alt="Logo" class="h-full w-full object-contain" />
+          </span>
+          <span class="truncate text-base font-semibold text-gray-950 dark:text-white">
+            {{ siteName }}
+          </span>
+        </router-link>
+        <router-link
+          to="/login"
+          class="inline-flex flex-shrink-0 items-center justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-primary-600/20 transition hover:bg-primary-700"
+        >
+          {{ t('common.login') }}
+        </router-link>
+      </div>
+    </header>
+
+    <main class="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:py-10">
+      <article class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-dark-700 dark:bg-dark-900">
+        <div class="border-b border-gray-200 px-6 py-5 dark:border-dark-700">
+          <p class="text-sm font-medium text-primary-700 dark:text-primary-300">{{ siteName }}</p>
+          <h1 class="mt-2 text-3xl font-bold text-gray-950 dark:text-white">
+            {{ homeContentTitle }}
+          </h1>
+        </div>
+        <div class="public-home-content p-6 md:p-10" v-html="renderedHomeContent"></div>
+      </article>
+    </main>
   </div>
 
   <!-- Default Home Page -->
@@ -114,10 +138,14 @@
     <main class="relative z-10 flex-1 px-6 py-16">
       <div class="mx-auto max-w-6xl">
         <!-- Hero Section - Left/Right Layout -->
-        <div class="mb-12 flex flex-col items-center justify-between gap-12 lg:flex-row lg:gap-16">
+        <section
+          class="mb-12 flex flex-col items-center justify-between gap-12 lg:flex-row lg:gap-16"
+          aria-labelledby="home-hero-title"
+        >
           <!-- Left: Text Content -->
-          <div class="flex-1 text-center lg:text-left">
+          <article class="flex-1 text-center lg:text-left">
             <h1
+              id="home-hero-title"
               class="mb-4 text-4xl font-bold text-gray-900 dark:text-white md:text-5xl lg:text-6xl"
             >
               {{ siteName }}
@@ -136,10 +164,10 @@
                 <Icon name="arrowRight" size="md" class="ml-2" :stroke-width="2" />
               </router-link>
             </div>
-          </div>
+          </article>
 
           <!-- Right: Terminal Animation -->
-          <div class="flex flex-1 justify-center lg:justify-end">
+          <aside class="flex flex-1 justify-center lg:justify-end" aria-label="API example preview">
             <div class="terminal-container">
               <div class="terminal-window">
                 <!-- Window header -->
@@ -173,11 +201,11 @@
                 </div>
               </div>
             </div>
-          </div>
-        </div>
+          </aside>
+        </section>
 
         <!-- Feature Tags - Centered -->
-        <div class="mb-12 flex flex-wrap items-center justify-center gap-4 md:gap-6">
+        <section class="mb-12 flex flex-wrap items-center justify-center gap-4 md:gap-6" aria-label="Core highlights">
           <div
             class="inline-flex items-center gap-2.5 rounded-full border border-gray-200/50 bg-white/80 px-5 py-2.5 shadow-sm backdrop-blur-sm dark:border-dark-700/50 dark:bg-dark-800/80"
           >
@@ -202,12 +230,13 @@
               t('home.tags.realtimeBilling')
             }}</span>
           </div>
-        </div>
+        </section>
 
         <!-- Features Grid -->
-        <div class="mb-12 grid gap-6 md:grid-cols-3">
+        <section class="mb-12 grid gap-6 md:grid-cols-3" aria-labelledby="home-features-title">
+          <h2 id="home-features-title" class="sr-only">Platform features</h2>
           <!-- Feature 1: Unified Gateway -->
-          <div
+          <article
             class="group rounded-2xl border border-gray-200/50 bg-white/60 p-6 backdrop-blur-sm transition-all duration-300 hover:shadow-xl hover:shadow-primary-500/10 dark:border-dark-700/50 dark:bg-dark-800/60"
           >
             <div
@@ -221,10 +250,10 @@
             <p class="text-sm leading-relaxed text-gray-600 dark:text-dark-400">
               {{ t('home.features.unifiedGatewayDesc') }}
             </p>
-          </div>
+          </article>
 
           <!-- Feature 2: Account Pool -->
-          <div
+          <article
             class="group rounded-2xl border border-gray-200/50 bg-white/60 p-6 backdrop-blur-sm transition-all duration-300 hover:shadow-xl hover:shadow-primary-500/10 dark:border-dark-700/50 dark:bg-dark-800/60"
           >
             <div
@@ -250,10 +279,10 @@
             <p class="text-sm leading-relaxed text-gray-600 dark:text-dark-400">
               {{ t('home.features.multiAccountDesc') }}
             </p>
-          </div>
+          </article>
 
           <!-- Feature 3: Billing & Quota -->
-          <div
+          <article
             class="group rounded-2xl border border-gray-200/50 bg-white/60 p-6 backdrop-blur-sm transition-all duration-300 hover:shadow-xl hover:shadow-primary-500/10 dark:border-dark-700/50 dark:bg-dark-800/60"
           >
             <div
@@ -279,20 +308,20 @@
             <p class="text-sm leading-relaxed text-gray-600 dark:text-dark-400">
               {{ t('home.features.balanceQuotaDesc') }}
             </p>
-          </div>
-        </div>
+          </article>
+        </section>
 
         <!-- Supported Providers -->
-        <div class="mb-8 text-center">
+        <section class="mb-8 text-center" aria-labelledby="home-providers-title">
           <h2 class="mb-3 text-2xl font-bold text-gray-900 dark:text-white">
-            {{ t('home.providers.title') }}
+            <span id="home-providers-title">{{ t('home.providers.title') }}</span>
           </h2>
           <p class="text-sm text-gray-600 dark:text-dark-400">
             {{ t('home.providers.description') }}
           </p>
-        </div>
+        </section>
 
-        <div class="mb-16 flex flex-wrap items-center justify-center gap-4">
+        <section class="mb-16 flex flex-wrap items-center justify-center gap-4" aria-label="Supported AI providers">
           <!-- Claude - Supported -->
           <div
             class="flex items-center gap-2 rounded-xl border border-primary-200 bg-white/60 px-5 py-3 ring-1 ring-primary-500/20 backdrop-blur-sm dark:border-primary-800 dark:bg-dark-800/60"
@@ -368,7 +397,7 @@
               >{{ t('home.providers.soon') }}</span
             >
           </div>
-        </div>
+        </section>
       </div>
     </main>
 
@@ -410,6 +439,8 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore, useAppStore } from '@/stores'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { sanitizePublicHTML } from '@/utils/publicContent'
+import { sanitizeUrl } from '@/utils/url'
 
 const { t } = useI18n()
 
@@ -418,16 +449,12 @@ const appStore = useAppStore()
 
 // Site settings - directly from appStore (already initialized from injected config)
 const siteName = computed(() => appStore.cachedPublicSettings?.site_name || appStore.siteName || 'Sub2API')
-const siteLogo = computed(() => appStore.cachedPublicSettings?.site_logo || appStore.siteLogo || '')
+const siteLogo = computed(() => sanitizeUrl(appStore.cachedPublicSettings?.site_logo || appStore.siteLogo || '', { allowRelative: true }))
 const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || 'AI API Gateway Platform')
 const docUrl = computed(() => appStore.cachedPublicSettings?.doc_url || appStore.docUrl || '')
 const homeContent = computed(() => appStore.cachedPublicSettings?.home_content || '')
-
-// Check if homeContent is a URL (for iframe display)
-const isHomeContentUrl = computed(() => {
-  const content = homeContent.value.trim()
-  return content.startsWith('http://') || content.startsWith('https://')
-})
+const homeContentTitle = computed(() => appStore.cachedPublicSettings?.seo_home_title || siteName.value)
+const renderedHomeContent = computed(() => sanitizePublicHTML(homeContent.value))
 
 // Theme
 const isDark = ref(document.documentElement.classList.contains('dark'))
@@ -485,6 +512,55 @@ onMounted(() => {
 .terminal-container {
   position: relative;
   display: inline-block;
+}
+
+.public-home-content {
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+
+.public-home-content :deep(h1) {
+  @apply mb-4 mt-8 border-b border-gray-200 pb-3 text-3xl font-bold dark:border-dark-700;
+}
+
+.public-home-content :deep(h2) {
+  @apply mb-3 mt-7 text-2xl font-bold;
+}
+
+.public-home-content :deep(h3) {
+  @apply mb-2 mt-6 text-xl font-semibold;
+}
+
+.public-home-content :deep(p) {
+  @apply mb-4 text-gray-700 dark:text-dark-200;
+}
+
+.public-home-content :deep(a) {
+  @apply text-primary-600 underline underline-offset-4 hover:text-primary-700 dark:text-primary-300 dark:hover:text-primary-200;
+}
+
+.public-home-content :deep(ul) {
+  @apply mb-4 list-disc pl-6;
+}
+
+.public-home-content :deep(ol) {
+  @apply mb-4 list-decimal pl-6;
+}
+
+.public-home-content :deep(img) {
+  @apply my-5 h-auto max-w-full rounded-lg;
+}
+
+.public-home-content :deep(code) {
+  @apply rounded bg-gray-100 px-1.5 py-0.5 font-mono text-sm dark:bg-dark-700;
+}
+
+.public-home-content :deep(pre) {
+  @apply my-4 overflow-x-auto rounded-xl bg-gray-900 p-4 text-gray-100;
+}
+
+.public-home-content :deep(pre code) {
+  @apply bg-transparent p-0 text-inherit;
 }
 
 /* Terminal Window */

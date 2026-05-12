@@ -89,6 +89,9 @@ func RegisterAdminRoutes(
 		// 渠道管理
 		registerChannelRoutes(admin, h)
 
+		// 公开价格导出配置
+		registerProviderPriceRoutes(admin, h)
+
 		// 渠道监控
 		registerChannelMonitorRoutes(admin, h)
 
@@ -281,6 +284,7 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		accounts.GET("/:id", h.Admin.Account.GetByID)
 		accounts.POST("", h.Admin.Account.Create)
 		accounts.POST("/check-mixed-channel", h.Admin.Account.CheckMixedChannel)
+		accounts.POST("/import/codex-session", h.Admin.Account.ImportCodexSession)
 		accounts.POST("/sync/crs", h.Admin.Account.SyncFromCRS)
 		accounts.POST("/sync/crs/preview", h.Admin.Account.PreviewFromCRS)
 		accounts.PUT("/:id", h.Admin.Account.Update)
@@ -591,6 +595,17 @@ func registerChannelRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		channels.POST("", h.Admin.Channel.Create)
 		channels.PUT("/:id", h.Admin.Channel.Update)
 		channels.DELETE("/:id", h.Admin.Channel.Delete)
+	}
+}
+
+func registerProviderPriceRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	if h == nil || h.Admin == nil || h.Admin.ProviderPrice == nil {
+		return
+	}
+	providerPricing := admin.Group("/provider-pricing")
+	{
+		providerPricing.GET("", h.Admin.ProviderPrice.List)
+		providerPricing.PUT("", h.Admin.ProviderPrice.Update)
 	}
 }
 
