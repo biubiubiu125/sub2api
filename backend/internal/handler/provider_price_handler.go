@@ -46,10 +46,10 @@ func NewProviderPriceHandler(
 }
 
 type providerPricingResponse struct {
-	SchemaVersion string                 `json:"schema_version"`
-	Success       bool                   `json:"success"`
-	Message       string                 `json:"message,omitempty"`
-	Data          *providerPricingData   `json:"data,omitempty"`
+	SchemaVersion string               `json:"schema_version"`
+	Success       bool                 `json:"success"`
+	Message       string               `json:"message,omitempty"`
+	Data          *providerPricingData `json:"data,omitempty"`
 }
 
 type providerPricingData struct {
@@ -81,11 +81,11 @@ type providerPriceEntry struct {
 }
 
 type modelExportPrice struct {
-	input          float64
-	output         float64
-	cacheInput     float64
-	cacheCreate5m  float64
-	cacheCreate1h  float64
+	input         float64
+	output        float64
+	cacheInput    float64
+	cacheCreate5m float64
+	cacheCreate1h float64
 }
 
 func hasAnyProviderPriceValue(item service.ProviderPriceOverride) bool {
