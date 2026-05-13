@@ -1,8 +1,7 @@
 <template>
   <AppLayout>
-    <TablePageLayout>
-      <template #filters>
-        <div class="flex flex-wrap items-start justify-between gap-4">
+    <div class="space-y-6">
+      <div class="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 class="text-xl font-semibold text-gray-900 dark:text-white">公开价格导出配置</h1>
             <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
@@ -23,11 +22,10 @@
               {{ saving ? '保存中...' : '保存配置' }}
             </button>
           </div>
-        </div>
-      </template>
+      </div>
 
-      <template #table>
-        <div class="h-full overflow-y-auto pr-1">
+      <div class="card overflow-visible">
+        <div class="overflow-x-auto overflow-y-visible">
           <div v-if="formError" class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">
             {{ formError }}
           </div>
@@ -129,15 +127,14 @@
             </div>
           </div>
         </div>
-      </template>
-    </TablePageLayout>
+      </div>
+    </div>
   </AppLayout>
 </template>
 
 <script setup lang="ts">
 import { nextTick, ref } from 'vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
-import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import Select from '@/components/common/Select.vue'
 import { adminAPI } from '@/api'
 import { useAppStore } from '@/stores'

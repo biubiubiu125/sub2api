@@ -79,6 +79,8 @@ export function collectPrerenderRoutes(
     if (homeContent) {
       if (/^https?:\/\//i.test(homeContent)) {
         homeEntry.html = `<iframe src="${homeContent}" class="h-screen w-full border-0" allowfullscreen></iframe>`
+      } else if (/<[a-z][\s\S]*>/i.test(homeContent)) {
+        homeEntry.html = homeContent
       } else {
         homeEntry.markdown = homeContent
       }

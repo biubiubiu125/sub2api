@@ -119,8 +119,17 @@ func (s *FrontendServer) serveRenderedHomePage(c *gin.Context, settingsJSON []by
 		return true
 	}
 
-	bodyHTML, err := renderMarkdownToHTML(homeContent, "")
-	if err != nil || strings.TrimSpace(bodyHTML) == "" {
+	var bodyHTML string
+	if regexp.MustCompile(`(?i)<[a-z][\s\S]*>`).MatchString(homeContent) {
+		bodyHTML = tutorialhtml.SanitizeTutorialHTML(homeContent)
+	} else {
+		var err error
+		bodyHTML, err = renderMarkdownToHTML(homeContent, "")
+		if err != nil {
+			return false
+		}
+	}
+	if strings.TrimSpace(bodyHTML) == "" {
 		return false
 	}
 
