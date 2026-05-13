@@ -439,7 +439,7 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore, useAppStore } from '@/stores'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { sanitizePublicHTML } from '@/utils/publicContent'
+import { renderPublicMarkdown } from '@/utils/publicContent'
 import { sanitizeUrl } from '@/utils/url'
 
 const { t } = useI18n()
@@ -454,7 +454,7 @@ const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle
 const docUrl = computed(() => appStore.cachedPublicSettings?.doc_url || appStore.docUrl || '')
 const homeContent = computed(() => appStore.cachedPublicSettings?.home_content || '')
 const homeContentTitle = computed(() => appStore.cachedPublicSettings?.seo_home_title || siteName.value)
-const renderedHomeContent = computed(() => sanitizePublicHTML(homeContent.value))
+const renderedHomeContent = computed(() => renderPublicMarkdown(homeContent.value))
 
 // Theme
 const isDark = ref(document.documentElement.classList.contains('dark'))

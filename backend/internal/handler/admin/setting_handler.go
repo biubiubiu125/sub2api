@@ -1191,8 +1191,14 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			trimmedURL := strings.TrimSpace(item.URL)
 			pageSlug := strings.TrimSpace(item.PageSlug)
 			isMarkdownURL := strings.HasPrefix(trimmedURL, "md:") && strings.TrimSpace(strings.TrimPrefix(trimmedURL, "md:")) != ""
-			if !isMarkdownURL && pageSlug == "" {
-				response.BadRequest(c, "Custom menu item must reference markdown content via page_slug or md: URL")
+			isAbsoluteHTTPURL := false
+			if trimmedURL != "" && !isMarkdownURL {
+				if err := config.ValidateAbsoluteHTTPURL(trimmedURL); err == nil {
+					isAbsoluteHTTPURL = true
+				}
+			}
+			if !isMarkdownURL && pageSlug == "" && !isAbsoluteHTTPURL {
+				response.BadRequest(c, "Custom menu item URL must be an absolute http(s) URL, or reference markdown content via page_slug or md: URL")
 				return
 			} else if isMarkdownURL && pageSlug == "" {
 				pageSlug = strings.TrimSpace(strings.TrimPrefix(trimmedURL, "md:"))
@@ -1206,7 +1212,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 				response.BadRequest(c, "Custom menu item URL is required")
 				return
 			}
-			if !isMarkdownURL && pageSlug == "" && trimmedURL == "" {
+			if !isMarkdownURL && pageSlug == "" && !isAbsoluteHTTPURL {
 				response.BadRequest(c, "Custom menu item URL must be an absolute http(s) URL")
 				return
 			}
