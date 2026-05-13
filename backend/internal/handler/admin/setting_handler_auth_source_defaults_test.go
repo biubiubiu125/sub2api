@@ -642,17 +642,6 @@ func TestSettingHandler_UpdateSettings_RejectsInvalidSEOImageAndRobotsValues(t *
 			"promo_code_enabled": true,
 			"home_content":       "https://evil.example/embed",
 		},
-		{
-			"promo_code_enabled": true,
-			"custom_menu_items": []map[string]any{
-				{
-					"id":         "pricing",
-					"label":      "Pricing",
-					"url":        "https://billing.example.com/embed",
-					"visibility": "user",
-				},
-			},
-		},
 	}
 
 	for _, body := range tests {
@@ -675,6 +664,43 @@ func TestSettingHandler_UpdateSettings_RejectsInvalidSEOImageAndRobotsValues(t *
 		handler.UpdateSettings(c)
 		require.Equal(t, http.StatusBadRequest, rec.Code)
 	}
+}
+
+func TestSettingHandler_UpdateSettings_AcceptsCustomMenuExternalURL(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := &settingHandlerRepoStub{
+		values: map[string]string{
+			service.SettingKeyPromoCodeEnabled: "true",
+		},
+	}
+	svc := service.NewSettingService(repo, &config.Config{Default: config.DefaultConfig{UserConcurrency: 5}})
+	handler := NewSettingHandler(svc, nil, nil, nil, nil, nil)
+
+	body := map[string]any{
+		"promo_code_enabled": true,
+		"custom_menu_items": []map[string]any{
+			{
+				"id":         "pricing",
+				"label":      "Pricing",
+				"url":        "https://billing.example.com/embed",
+				"visibility": "user",
+			},
+		},
+	}
+
+	rawBody, err := json.Marshal(body)
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/v1/admin/settings", bytes.NewReader(rawBody))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	handler.UpdateSettings(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, repo.values[service.SettingKeyCustomMenuItems], "https://billing.example.com/embed")
 }
 
 func TestSettingHandler_UpdateSettings_RejectsCustomMenuPageSlugThatRuntimeCannotServe(t *testing.T) {

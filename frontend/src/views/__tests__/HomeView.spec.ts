@@ -106,6 +106,32 @@ describe('HomeView', () => {
     expect(wrapper.find('header').exists()).toBe(true)
   })
 
+  it('renders markdown home content instead of showing raw markdown text', () => {
+    appStore.cachedPublicSettings = {
+      site_name: 'MyCustomSite',
+      site_logo: '/logo.png',
+      site_subtitle: 'Readable public home page',
+      doc_url: '',
+      seo_home_title: '鍏紑棣栭〉',
+      home_content: '# RK AI\n\n- 绗竴椤�\n- 绗簩椤�',
+    }
+
+    const wrapper = mount(HomeView, {
+      global: {
+        stubs: {
+          RouterLink: {
+            props: ['to'],
+            template: '<a :href="to"><slot /></a>',
+          },
+        },
+      },
+    })
+
+    expect(wrapper.find('.public-home-content h1').exists()).toBe(true)
+    expect(wrapper.find('.public-home-content ul').exists()).toBe(true)
+    expect(wrapper.html()).not.toContain('# RK AI')
+  })
+
   it('falls back to the default home page when sanitized home content is empty', () => {
     appStore.cachedPublicSettings = {
       site_name: 'MyCustomSite',
