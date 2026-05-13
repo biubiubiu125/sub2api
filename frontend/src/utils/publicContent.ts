@@ -318,9 +318,9 @@ function sanitizeSVGElement(element: HTMLElement): void {
   for (const { name } of Array.from(element.attributes)) {
     element.removeAttribute(name)
   }
-  for (const [key, value] of sanitized.entries()) {
+  sanitized.forEach((value, key) => {
     element.setAttribute(key, value)
-  }
+  })
 }
 
 function postProcessSanitizedHTML(root: HTMLElement): void {
