@@ -43,6 +43,9 @@ describe('admin ProviderPricingView', () => {
         cache_input_price: null,
         cache_create_price: null,
         cache_create_price_1h: null,
+        cache_write_price: 3.3,
+        cache_read_price: 1.1,
+        image_output_price: 9.9,
         enabled: true,
         note: '推荐价',
         sort_order: 0,
@@ -70,6 +73,9 @@ describe('admin ProviderPricingView', () => {
     const textValues = inputs.map((input) => String(input.element.value))
     expect(textValues).toContain('公开组')
     expect(textValues).toContain('gpt-5.4')
+    expect(textValues).toContain('3.3')
+    expect(textValues).toContain('1.1')
+    expect(textValues).toContain('9.9')
 
     await wrapper.get('button.btn-primary').trigger('click')
     await flushPromises()

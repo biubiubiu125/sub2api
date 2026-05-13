@@ -63,7 +63,7 @@
               </div>
             </div>
 
-            <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-5">
+            <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-4 xl:grid-cols-8">
               <div>
                 <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">输入价格</label>
                 <input v-model="item.input_price_text" type="number" step="0.000001" min="0" class="input" />
@@ -83,6 +83,18 @@
               <div>
                 <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">缓存写入 1H</label>
                 <input v-model="item.cache_create_price_1h_text" type="number" step="0.000001" min="0" class="input" />
+              </div>
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Cache Write</label>
+                <input v-model="item.cache_write_price_text" type="number" step="0.000001" min="0" class="input" />
+              </div>
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Cache Read</label>
+                <input v-model="item.cache_read_price_text" type="number" step="0.000001" min="0" class="input" />
+              </div>
+              <div>
+                <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">图片输出</label>
+                <input v-model="item.image_output_price_text" type="number" step="0.000001" min="0" class="input" />
               </div>
             </div>
 
@@ -129,6 +141,9 @@ type EditableRow = ProviderPriceOverride & {
   cache_input_price_text: string
   cache_create_price_text: string
   cache_create_price_1h_text: string
+  cache_write_price_text: string
+  cache_read_price_text: string
+  image_output_price_text: string
 }
 
 const appStore = useAppStore()
@@ -148,6 +163,9 @@ function rowToEditable(item: ProviderPriceOverride, index: number): EditableRow 
     cache_input_price_text: item.cache_input_price == null ? '' : String(item.cache_input_price),
     cache_create_price_text: item.cache_create_price == null ? '' : String(item.cache_create_price),
     cache_create_price_1h_text: item.cache_create_price_1h == null ? '' : String(item.cache_create_price_1h),
+    cache_write_price_text: item.cache_write_price == null ? '' : String(item.cache_write_price),
+    cache_read_price_text: item.cache_read_price == null ? '' : String(item.cache_read_price),
+    image_output_price_text: item.image_output_price == null ? '' : String(item.image_output_price),
   }
 }
 
@@ -186,6 +204,9 @@ function addRow() {
     cache_input_price: null,
     cache_create_price: null,
     cache_create_price_1h: null,
+    cache_write_price: null,
+    cache_read_price: null,
+    image_output_price: null,
     enabled: true,
     note: '',
     sort_order: rows.value.length,
@@ -211,6 +232,9 @@ function isBlankRow(item: ProviderPriceOverride): boolean {
       item.cache_input_price,
       item.cache_create_price,
       item.cache_create_price_1h,
+      item.cache_write_price,
+      item.cache_read_price,
+      item.image_output_price,
     ].some((value) => typeof value === 'number' && value > 0)
 }
 
@@ -227,6 +251,9 @@ function getInvalidReason(item: ProviderPriceOverride): string | null {
     item.cache_input_price,
     item.cache_create_price,
     item.cache_create_price_1h,
+    item.cache_write_price,
+    item.cache_read_price,
+    item.image_output_price,
   ].some((value) => typeof value === 'number' && value > 0)) {
     return '至少要填写一个大于 0 的价格。'
   }
@@ -255,6 +282,9 @@ async function save() {
     cache_input_price: parsePrice(item.cache_input_price_text),
     cache_create_price: parsePrice(item.cache_create_price_text),
     cache_create_price_1h: parsePrice(item.cache_create_price_1h_text),
+    cache_write_price: parsePrice(item.cache_write_price_text),
+    cache_read_price: parsePrice(item.cache_read_price_text),
+    image_output_price: parsePrice(item.image_output_price_text),
     enabled: item.enabled,
     note: item.note?.trim() || '',
     sort_order: Number.isFinite(item.sort_order) ? item.sort_order : index,
