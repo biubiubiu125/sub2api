@@ -18,15 +18,19 @@ type providerPriceGroupRepoStub struct {
 	groups []service.Group
 }
 
-func (s *providerPriceGroupRepoStub) Create(context.Context, *service.Group) error { panic("unexpected call") }
+func (s *providerPriceGroupRepoStub) Create(context.Context, *service.Group) error {
+	panic("unexpected call")
+}
 func (s *providerPriceGroupRepoStub) GetByID(context.Context, int64) (*service.Group, error) {
 	panic("unexpected call")
 }
 func (s *providerPriceGroupRepoStub) GetByIDLite(context.Context, int64) (*service.Group, error) {
 	panic("unexpected call")
 }
-func (s *providerPriceGroupRepoStub) Update(context.Context, *service.Group) error { panic("unexpected call") }
-func (s *providerPriceGroupRepoStub) Delete(context.Context, int64) error          { panic("unexpected call") }
+func (s *providerPriceGroupRepoStub) Update(context.Context, *service.Group) error {
+	panic("unexpected call")
+}
+func (s *providerPriceGroupRepoStub) Delete(context.Context, int64) error { panic("unexpected call") }
 func (s *providerPriceGroupRepoStub) DeleteCascade(context.Context, int64) ([]int64, error) {
 	panic("unexpected call")
 }
@@ -42,7 +46,9 @@ func (s *providerPriceGroupRepoStub) ListActive(context.Context) ([]service.Grou
 func (s *providerPriceGroupRepoStub) ListActiveByPlatform(context.Context, string) ([]service.Group, error) {
 	panic("unexpected call")
 }
-func (s *providerPriceGroupRepoStub) ExistsByName(context.Context, string) (bool, error) { panic("unexpected call") }
+func (s *providerPriceGroupRepoStub) ExistsByName(context.Context, string) (bool, error) {
+	panic("unexpected call")
+}
 func (s *providerPriceGroupRepoStub) GetAccountCount(context.Context, int64) (int64, int64, error) {
 	panic("unexpected call")
 }
@@ -63,12 +69,16 @@ type providerPriceChannelRepoStub struct {
 	channel *service.Channel
 }
 
-func (s *providerPriceChannelRepoStub) Create(context.Context, *service.Channel) error { panic("unexpected call") }
+func (s *providerPriceChannelRepoStub) Create(context.Context, *service.Channel) error {
+	panic("unexpected call")
+}
 func (s *providerPriceChannelRepoStub) GetByID(context.Context, int64) (*service.Channel, error) {
 	return s.channel, nil
 }
-func (s *providerPriceChannelRepoStub) Update(context.Context, *service.Channel) error { panic("unexpected call") }
-func (s *providerPriceChannelRepoStub) Delete(context.Context, int64) error            { panic("unexpected call") }
+func (s *providerPriceChannelRepoStub) Update(context.Context, *service.Channel) error {
+	panic("unexpected call")
+}
+func (s *providerPriceChannelRepoStub) Delete(context.Context, int64) error { panic("unexpected call") }
 func (s *providerPriceChannelRepoStub) List(context.Context, pagination.PaginationParams, string, string) ([]service.Channel, *pagination.PaginationResult, error) {
 	panic("unexpected call")
 }
@@ -148,7 +158,9 @@ func (s *providerPriceSettingRepoStub) SetMultiple(context.Context, map[string]s
 func (s *providerPriceSettingRepoStub) GetAll(context.Context) (map[string]string, error) {
 	panic("unexpected call")
 }
-func (s *providerPriceSettingRepoStub) Delete(context.Context, string) error { panic("unexpected call") }
+func (s *providerPriceSettingRepoStub) Delete(context.Context, string) error {
+	panic("unexpected call")
+}
 
 func TestProviderPriceHandler_OpenAIGroupExportsExpectedCNYPrices(t *testing.T) {
 	t.Helper()
@@ -316,9 +328,9 @@ func TestProviderPriceHandler_UsesChannelSupportedModelsWhenGatewayModelsAreEmpt
 	}
 	channelRepo := &providerPriceChannelRepoStub{
 		channel: &service.Channel{
-			ID:     10,
-			Name:   "test-channel",
-			Status: service.StatusActive,
+			ID:       10,
+			Name:     "test-channel",
+			Status:   service.StatusActive,
 			GroupIDs: []int64{1},
 			ModelPricing: []service.ChannelModelPricing{
 				{
@@ -394,9 +406,9 @@ func TestProviderPriceHandler_PrefersOverridePrices(t *testing.T) {
 
 	settingRepo := &providerPriceSettingRepoStub{
 		values: map[string]string{
-			service.SettingBalanceRechargeMult: "2",
-			service.SettingKeySiteName:         "Test Site",
-			service.SettingKeyFrontendURL:      "https://pricing.example.com",
+			service.SettingBalanceRechargeMult:       "2",
+			service.SettingKeySiteName:               "Test Site",
+			service.SettingKeyFrontendURL:            "https://pricing.example.com",
 			service.SettingKeyProviderPriceOverrides: `[{"id":"ovr-1","group_name":"公开组","model_name":"gpt-5.4","input_price":99.5,"output_price":199.5,"enabled":true,"sort_order":0}]`,
 		},
 	}
@@ -460,7 +472,7 @@ func TestProviderPriceHandler_FallbacksToAutoWhenOverrideEmpty(t *testing.T) {
 	}
 	settingRepo := &providerPriceSettingRepoStub{
 		values: map[string]string{
-			service.SettingBalanceRechargeMult: "2",
+			service.SettingBalanceRechargeMult:       "2",
 			service.SettingKeyProviderPriceOverrides: `[]`,
 		},
 	}

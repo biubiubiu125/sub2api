@@ -377,7 +377,7 @@ func TestServePageImage_AllowsLegalDocumentSlug(t *testing.T) {
 
 	repo := &pageHandlerSettingRepoStub{
 		values: map[string]string{
-			service.SettingKeyCustomMenuItems:        `[]`,
+			service.SettingKeyCustomMenuItems:         `[]`,
 			service.SettingKeyLoginAgreementDocuments: `[{"id":"terms","title":"Terms","content_md":"# Terms"}]`,
 		},
 	}
