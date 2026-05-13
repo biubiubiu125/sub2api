@@ -35,17 +35,18 @@ describe('prerender manifest', () => {
     })
   })
 
-  it('does not inject fallback public home content when home_content is empty', () => {
+  it('keeps home route as SPA shell even when home_content is configured', () => {
     const routes = collectPrerenderRoutes({
       data: {
         site_name: 'Sub2API',
         site_subtitle: 'Readable public home page',
-        home_content: '',
+        home_content: '<h1>Custom Home</h1>',
       },
     })
 
     const homeRoute = routes.find((entry) => entry.route === '/home')
     expect(homeRoute).toBeTruthy()
     expect(homeRoute?.html).toBeUndefined()
+    expect(homeRoute?.markdown).toBeUndefined()
   })
 })

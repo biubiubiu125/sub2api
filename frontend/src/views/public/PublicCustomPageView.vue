@@ -62,7 +62,7 @@ import { useI18n } from 'vue-i18n'
 import { getPublicSettings } from '@/api/auth'
 import { updateRouteSEO } from '@/utils/seo'
 import type { CustomMenuItem, PublicSettings } from '@/types'
-import { renderPublicMarkdown } from '@/utils/publicContent'
+import { renderPublicMarkdown } from '@/utils/publicContent.ts'
 import { sanitizeUrl } from '@/utils/url'
 
 const props = withDefaults(defineProps<{

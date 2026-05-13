@@ -3,7 +3,7 @@
   <div v-if="isHomeContentUrl || hasRenderableHomeContent" class="min-h-screen">
     <iframe
       v-if="isHomeContentUrl"
-      :src="homeContent.trim()"
+      :src="trimmedHomeContent"
       class="h-screen w-full border-0"
       allowfullscreen
     ></iframe>
@@ -417,7 +417,7 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore, useAppStore } from '@/stores'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { renderPublicMarkdown, sanitizePublicHTML } from '@/utils/publicContent'
+import { renderPublicMarkdown, sanitizePublicHTML } from '@/utils/publicContent.ts'
 import { sanitizeUrl } from '@/utils/url'
 
 const { t } = useI18n()
@@ -431,12 +431,13 @@ const siteLogo = computed(() => sanitizeUrl(appStore.cachedPublicSettings?.site_
 const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || 'AI API Gateway Platform')
 const docUrl = computed(() => appStore.cachedPublicSettings?.doc_url || appStore.docUrl || '')
 const homeContent = computed(() => appStore.cachedPublicSettings?.home_content || '')
+const trimmedHomeContent = computed(() => homeContent.value.trim())
 const isHomeContentUrl = computed(() => {
-  const value = homeContent.value.trim()
+  const value = trimmedHomeContent.value
   return value.startsWith('http://') || value.startsWith('https://')
 })
 const renderedHomeContent = computed(() => {
-  const raw = homeContent.value.trim()
+  const raw = trimmedHomeContent.value
   if (!raw || isHomeContentUrl.value) return ''
   const looksLikeHTML = /<[a-z][\s\S]*>/i.test(raw)
   return looksLikeHTML ? sanitizePublicHTML(raw) : renderPublicMarkdown(raw)

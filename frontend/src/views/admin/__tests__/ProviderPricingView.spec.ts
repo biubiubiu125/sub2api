@@ -95,6 +95,7 @@ describe('admin ProviderPricingView', () => {
     expect(textValues).toContain('1.1')
     expect(textValues).toContain('9.9')
     expect(wrapper.find('select').element.value).toBe('gpt-5.4')
+    expect(wrapper.find('.provider-pricing-scroll').exists()).toBe(true)
 
     await wrapper.get('button.btn-primary').trigger('click')
     await flushPromises()

@@ -22,7 +22,7 @@ import AppLayout from '@/components/layout/AppLayout.vue'
 import { useAppStore } from '@/stores'
 import { updateRouteSEO } from '@/utils/seo'
 import { useRoute } from 'vue-router'
-import { sanitizePublicHTML } from '@/utils/publicContent'
+import { sanitizePublicHTML } from '@/utils/publicContent.ts'
 
 interface TutorialDocumentPayload {
   content_html: string

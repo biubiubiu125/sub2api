@@ -107,7 +107,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { renderPublicMarkdown } from '@/utils/publicContent'
+import { renderPublicMarkdown } from '@/utils/publicContent.ts'
 
 interface TocItem {
   id: string

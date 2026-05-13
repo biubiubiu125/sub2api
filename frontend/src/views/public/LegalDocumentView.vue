@@ -92,7 +92,7 @@ import { getPublicSettings } from '@/api/auth'
 import { updateRouteSEO } from '@/utils/seo'
 import { sanitizeUrl } from '@/utils/url'
 import type { LoginAgreementDocument, PublicSettings } from '@/types'
-import { renderPublicMarkdown } from '@/utils/publicContent'
+import { renderPublicMarkdown } from '@/utils/publicContent.ts'
 
 type LegalDocumentIcon = 'document' | 'shield' | 'globe' | 'cog'
 

@@ -43,7 +43,7 @@ var (
 
 func (s *FrontendServer) tryServePublicRenderedPage(c *gin.Context, requestPath string) bool {
 	requestPath = normalizeRequestPath(requestPath)
-	if requestPath != "/" && requestPath != "/home" && !strings.HasPrefix(requestPath, "/legal/") && !strings.HasPrefix(requestPath, "/custom/") && requestPath != "/docs/tutorial" {
+	if !strings.HasPrefix(requestPath, "/legal/") && !strings.HasPrefix(requestPath, "/custom/") && requestPath != "/docs/tutorial" {
 		return false
 	}
 
@@ -54,11 +54,6 @@ func (s *FrontendServer) tryServePublicRenderedPage(c *gin.Context, requestPath 
 	cfg := parseSEOConfig(settingsJSON)
 
 	switch {
-	case requestPath == "/" || requestPath == "/home":
-		if strings.TrimSpace(cfg.HomeContent) == "" {
-			return false
-		}
-		return s.serveRenderedHomePage(c, settingsJSON, requestPath)
 	case strings.HasPrefix(requestPath, "/legal/"):
 		docID := strings.TrimPrefix(requestPath, "/legal/")
 		for _, doc := range cfg.LoginAgreementDocuments {

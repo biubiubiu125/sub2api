@@ -24,8 +24,8 @@
           </div>
       </div>
 
-      <div class="card overflow-visible">
-        <div class="overflow-x-auto overflow-y-visible">
+      <div class="card overflow-hidden">
+        <div class="overflow-x-auto">
           <div v-if="formError" class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">
             {{ formError }}
           </div>
@@ -33,7 +33,7 @@
             {{ saveSuccessMessage }}
           </div>
 
-          <div class="space-y-4">
+          <div class="provider-pricing-scroll space-y-4 pr-2 md:max-h-[calc(100vh-16rem)] md:overflow-y-auto">
           <div
             v-for="(item, index) in rows"
             :id="`provider-price-row-${item.local_id}`"

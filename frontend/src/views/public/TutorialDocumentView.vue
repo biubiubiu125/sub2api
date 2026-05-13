@@ -45,7 +45,7 @@ import { useI18n } from 'vue-i18n'
 import { getPublicSettings } from '@/api/auth'
 import type { PublicSettings } from '@/types'
 import { updateRouteSEO } from '@/utils/seo'
-import { sanitizePublicHTML } from '@/utils/publicContent'
+import { sanitizePublicHTML } from '@/utils/publicContent.ts'
 import { sanitizeUrl } from '@/utils/url'
 
 interface TutorialDocumentPayload {

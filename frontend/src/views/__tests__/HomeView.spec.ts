@@ -86,7 +86,16 @@ describe('HomeView', () => {
     })))
   })
 
-  it('renders custom home content in full-page mode', () => {
+  it('renders sanitized html home content in full-page mode while preserving safe structure', () => {
+    appStore.cachedPublicSettings = {
+      site_name: 'MyCustomSite',
+      site_logo: '/logo.png',
+      site_subtitle: 'Readable public home page',
+      doc_url: '',
+      seo_home_title: '公开首页',
+      home_content: '<div class="hero-shell"><h2>欢迎使用</h2><svg viewBox="0 0 24 24"><path d="M4 12h16"></path></svg><p>公开正文</p></div>',
+    }
+
     const wrapper = mount(HomeView, {
       global: {
         stubs: {
@@ -102,6 +111,8 @@ describe('HomeView', () => {
     expect(wrapper.html()).toContain('<h2>欢迎使用</h2>')
     expect(wrapper.html()).toContain('<p>公开正文</p>')
     expect(wrapper.find('.public-home-content').exists()).toBe(true)
+    expect(wrapper.html()).toContain('class="hero-shell"')
+    expect(wrapper.html()).toContain('<svg viewBox="0 0 24 24">')
   })
 
   it('renders markdown home content instead of showing raw markdown text', () => {

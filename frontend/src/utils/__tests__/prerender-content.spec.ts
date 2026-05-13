@@ -65,7 +65,7 @@ describe('prerender content injection', () => {
       html: `
         <p style="color:#0f766e" onclick="alert(1)">涓枃姝ｆ枃</p>
         <img src="/ok.png" onerror="alert(1)">
-        <svg onload="alert(1)"><circle cx="10" cy="10" r="10"></circle></svg>
+        <svg onload="alert(1)" viewBox="0 0 24 24"><circle cx="10" cy="10" r="10"></circle></svg>
         <div style="position:fixed;top:0;left:0;width:100%;height:100%">overlay</div>
       `,
     })
@@ -73,9 +73,11 @@ describe('prerender content injection', () => {
     expect(html).toContain('style="color: #0f766e"')
     expect(html).not.toContain('onclick=')
     expect(html).not.toContain('onerror=')
-    expect(html).not.toContain('<svg')
     expect(html).not.toContain('position:fixed')
     expect(html).toContain('涓枃姝ｆ枃')
+    expect(html).toContain('<svg')
+    expect(html).toContain('viewBox="0 0 24 24"')
+    expect(html).toContain('<circle cx="10" cy="10" r="10"></circle>')
   })
 
   it('escapes title and sanitizes prerendered body html', () => {

@@ -773,7 +773,7 @@ func TestFrontendServer_Middleware(t *testing.T) {
 		assert.NotContains(t, w.Body.String(), "public-markdown-content")
 	})
 
-	t.Run("renders_custom_home_content_inside_public_shell", func(t *testing.T) {
+	t.Run("keeps_home_route_on_spa_shell_when_home_content_exists", func(t *testing.T) {
 		provider := &mockSettingsProvider{
 			settings: map[string]any{
 				"site_name":      "MyCustomSite",
@@ -795,10 +795,9 @@ func TestFrontendServer_Middleware(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 		assert.Contains(t, w.Body.String(), "公开首页")
-		assert.Contains(t, w.Body.String(), "<h2>欢迎使用</h2>")
-		assert.Contains(t, w.Body.String(), "<p>公开正文</p>")
-		assert.Contains(t, w.Body.String(), `class="brand-name" href="/home"`)
-		assert.Contains(t, w.Body.String(), `class="content"`)
+		assert.Contains(t, w.Body.String(), `<div id="app"></div>`)
+		assert.NotContains(t, w.Body.String(), "<h2>欢迎使用</h2>")
+		assert.NotContains(t, w.Body.String(), `class="brand-name" href="/home"`)
 	})
 
 	t.Run("frontend server uses configured pricing data dir for public markdown pages", func(t *testing.T) {
