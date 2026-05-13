@@ -417,7 +417,7 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore, useAppStore } from '@/stores'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { renderPublicMarkdown } from '@/utils/publicContent'
+import { renderPublicMarkdown, sanitizePublicHTML } from '@/utils/publicContent'
 import { sanitizeUrl } from '@/utils/url'
 
 const { t } = useI18n()
@@ -435,7 +435,12 @@ const isHomeContentUrl = computed(() => {
   const value = homeContent.value.trim()
   return value.startsWith('http://') || value.startsWith('https://')
 })
-const renderedHomeContent = computed(() => renderPublicMarkdown(homeContent.value))
+const renderedHomeContent = computed(() => {
+  const raw = homeContent.value.trim()
+  if (!raw || isHomeContentUrl.value) return ''
+  const looksLikeHTML = /<[a-z][\s\S]*>/i.test(raw)
+  return looksLikeHTML ? sanitizePublicHTML(raw) : renderPublicMarkdown(raw)
+})
 const hasRenderableHomeContent = computed(() => !isHomeContentUrl.value && renderedHomeContent.value.trim() !== '')
 
 // Theme

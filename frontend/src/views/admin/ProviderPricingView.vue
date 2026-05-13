@@ -60,12 +60,12 @@
               </div>
               <div>
                 <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">模型名</label>
-                <input
-                  v-model.trim="item.model_name"
-                  type="text"
-                  class="input"
-                  list="provider-pricing-model-options"
-                  placeholder="输入完整模型名"
+                <Select
+                  v-model="item.model_name"
+                  :options="modelOptions"
+                  searchable
+                  creatable
+                  placeholder="选择或输入模型名"
                 />
               </div>
             </div>
@@ -129,9 +129,6 @@
             </div>
           </div>
         </div>
-        <datalist id="provider-pricing-model-options">
-          <option v-for="model in modelOptions" :key="model" :value="model" />
-        </datalist>
       </template>
     </TablePageLayout>
   </AppLayout>
@@ -141,6 +138,7 @@
 import { nextTick, ref } from 'vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
+import Select from '@/components/common/Select.vue'
 import { adminAPI } from '@/api'
 import { useAppStore } from '@/stores'
 import type { ProviderPriceOverride } from '@/api/admin/providerPricing'
@@ -165,7 +163,10 @@ const rows = ref<EditableRow[]>([])
 const formError = ref('')
 const saveSuccessMessage = ref('')
 const invalidRowLocalId = ref('')
-const modelOptions = getModelsByPlatform('openai')
+const modelOptions = getModelsByPlatform('openai').map((model) => ({
+  value: model,
+  label: model,
+}))
 
 function rowToEditable(item: ProviderPriceOverride, index: number): EditableRow {
   return {

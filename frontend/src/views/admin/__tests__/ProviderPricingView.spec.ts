@@ -25,6 +25,25 @@ vi.mock('@/stores', () => ({
   }),
 }))
 
+vi.mock('@/components/common/Select.vue', () => ({
+  default: {
+    name: 'Select',
+    props: ['modelValue', 'options', 'placeholder'],
+    emits: ['update:modelValue', 'change'],
+    template: `
+      <select
+        :value="modelValue"
+        @change="$emit('update:modelValue', $event.target.value); $emit('change', $event.target.value)"
+      >
+        <option value=""></option>
+        <option v-for="option in options" :key="option.value" :value="option.value">
+          {{ option.label }}
+        </option>
+      </select>
+    `,
+  },
+}))
+
 import ProviderPricingView from '../ProviderPricingView.vue'
 
 describe('admin ProviderPricingView', () => {
@@ -72,10 +91,10 @@ describe('admin ProviderPricingView', () => {
     const inputs = wrapper.findAll('input')
     const textValues = inputs.map((input) => String(input.element.value))
     expect(textValues).toContain('公开组')
-    expect(textValues).toContain('gpt-5.4')
     expect(textValues).toContain('3.3')
     expect(textValues).toContain('1.1')
     expect(textValues).toContain('9.9')
+    expect(wrapper.find('select').element.value).toBe('gpt-5.4')
 
     await wrapper.get('button.btn-primary').trigger('click')
     await flushPromises()
