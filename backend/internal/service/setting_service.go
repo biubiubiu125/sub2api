@@ -957,16 +957,16 @@ type PublicSettingsInjectionPayload struct {
 	WeChatOAuthMobileEnabled         bool                     `json:"wechat_oauth_mobile_enabled"`
 	OIDCOAuthEnabled                 bool                     `json:"oidc_oauth_enabled"`
 	OIDCOAuthProviderName            string                   `json:"oidc_oauth_provider_name"`
-	GitHubOAuthEnabled               bool                     `json:"github_oauth_enabled"`
-	GitHubOAuthClientID              string                   `json:"github_oauth_client_id"`
-	GitHubOAuthClientSecretConfigured bool                    `json:"github_oauth_client_secret_configured"`
-	GitHubOAuthRedirectURL           string                   `json:"github_oauth_redirect_url"`
-	GitHubOAuthFrontendRedirectURL   string                   `json:"github_oauth_frontend_redirect_url"`
-	GoogleOAuthEnabled               bool                     `json:"google_oauth_enabled"`
-	GoogleOAuthClientID              string                   `json:"google_oauth_client_id"`
-	GoogleOAuthClientSecretConfigured bool                    `json:"google_oauth_client_secret_configured"`
-	GoogleOAuthRedirectURL           string                   `json:"google_oauth_redirect_url"`
-	GoogleOAuthFrontendRedirectURL   string                   `json:"google_oauth_frontend_redirect_url"`
+	GitHubOAuthEnabled                bool                     `json:"github_oauth_enabled"`
+	GitHubOAuthClientID               string                   `json:"github_oauth_client_id"`
+	GitHubOAuthClientSecretConfigured bool                     `json:"github_oauth_client_secret_configured"`
+	GitHubOAuthRedirectURL            string                   `json:"github_oauth_redirect_url"`
+	GitHubOAuthFrontendRedirectURL    string                   `json:"github_oauth_frontend_redirect_url"`
+	GoogleOAuthEnabled                bool                     `json:"google_oauth_enabled"`
+	GoogleOAuthClientID               string                   `json:"google_oauth_client_id"`
+	GoogleOAuthClientSecretConfigured bool                     `json:"google_oauth_client_secret_configured"`
+	GoogleOAuthRedirectURL            string                   `json:"google_oauth_redirect_url"`
+	GoogleOAuthFrontendRedirectURL    string                   `json:"google_oauth_frontend_redirect_url"`
 	BackendModeEnabled               bool                     `json:"backend_mode_enabled"`
 	PaymentEnabled                   bool                     `json:"payment_enabled"`
 	Version                          string                   `json:"version"`
