@@ -191,4 +191,31 @@ describe('HomeView', () => {
     expect(iframe.exists()).toBe(true)
     expect(iframe.attributes('src')).toBe('https://example.com/embed')
   })
+
+  it('renders full html documents through iframe srcdoc to preserve embedded styles', () => {
+    appStore.cachedPublicSettings = {
+      site_name: 'MyCustomSite',
+      site_logo: '/logo.png',
+      site_subtitle: 'Readable public home page',
+      doc_url: '',
+      seo_home_title: '公开首页',
+      home_content: '<!DOCTYPE html><html><head><style>.hero{color:red}</style></head><body><div class="hero">Doc Home</div></body></html>',
+    }
+
+    const wrapper = mount(HomeView, {
+      global: {
+        stubs: {
+          RouterLink: {
+            props: ['to'],
+            template: '<a :href="to"><slot /></a>',
+          },
+        },
+      },
+    })
+
+    const iframe = wrapper.find('iframe')
+    expect(iframe.exists()).toBe(true)
+    expect(iframe.attributes('srcdoc')).toContain('<style>.hero{color:red}</style>')
+    expect(iframe.attributes('srcdoc')).toContain('<base href="/" target="_top">')
+  })
 })

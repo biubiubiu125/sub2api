@@ -1,11 +1,17 @@
 <template>
   <!-- Custom Home Content: Full Page Mode -->
-  <div v-if="isHomeContentUrl || hasRenderableHomeContent" class="min-h-screen">
+  <div v-if="isHomeContentUrl || isHomeContentDocument || hasRenderableHomeContent" class="min-h-screen">
     <iframe
       v-if="isHomeContentUrl"
       :src="trimmedHomeContent"
       class="h-screen w-full border-0"
       allowfullscreen
+    ></iframe>
+    <iframe
+      v-else-if="isHomeContentDocument"
+      :srcdoc="homeContentDocumentSrcdoc"
+      class="min-h-screen w-full border-0"
+      sandbox="allow-forms allow-popups allow-top-navigation-by-user-activation"
     ></iframe>
     <div
       v-else
@@ -436,13 +442,18 @@ const isHomeContentUrl = computed(() => {
   const value = trimmedHomeContent.value
   return value.startsWith('http://') || value.startsWith('https://')
 })
+const isHomeContentDocument = computed(() => {
+  if (isHomeContentUrl.value) return false
+  return /<!doctype html|<html[\s>]|<head[\s>]|<body[\s>]/i.test(trimmedHomeContent.value)
+})
 const renderedHomeContent = computed(() => {
   const raw = trimmedHomeContent.value
-  if (!raw || isHomeContentUrl.value) return ''
+  if (!raw || isHomeContentUrl.value || isHomeContentDocument.value) return ''
   const looksLikeHTML = /<[a-z][\s\S]*>/i.test(raw)
   return looksLikeHTML ? sanitizePublicHTML(raw) : renderPublicMarkdown(raw)
 })
-const hasRenderableHomeContent = computed(() => !isHomeContentUrl.value && renderedHomeContent.value.trim() !== '')
+const hasRenderableHomeContent = computed(() => !isHomeContentUrl.value && !isHomeContentDocument.value && renderedHomeContent.value.trim() !== '')
+const homeContentDocumentSrcdoc = computed(() => buildHomeDocumentSrcdoc(trimmedHomeContent.value))
 
 // Theme
 const isDark = ref(document.documentElement.classList.contains('dark'))
@@ -480,6 +491,21 @@ function initTheme() {
     isDark.value = true
     document.documentElement.classList.add('dark')
   }
+}
+
+function buildHomeDocumentSrcdoc(raw: string): string {
+  if (!raw) return ''
+  let sanitized = raw
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    .replace(/<meta\b[^>]*http-equiv\s*=\s*["']?refresh["']?[^>]*>/gi, '')
+
+  if (/<head[\s>]/i.test(sanitized)) {
+    return sanitized.replace(/<head([^>]*)>/i, '<head$1><base href="/" target="_top">')
+  }
+  if (/<html[\s>]/i.test(sanitized)) {
+    return sanitized.replace(/<html([^>]*)>/i, '<html$1><head><base href="/" target="_top"></head>')
+  }
+  return `<base href="/" target="_top">${sanitized}`
 }
 
 onMounted(() => {
