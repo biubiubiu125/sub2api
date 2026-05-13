@@ -7,17 +7,17 @@ import (
 
 // CustomMenuItem represents a user-configured custom menu entry.
 type CustomMenuItem struct {
-	ID         string `json:"id"`
-	Label      string `json:"label"`
-	IconSVG    string `json:"icon_svg"`
-	URL        string `json:"url"`
-	PageSlug   string `json:"page_slug,omitempty"`
-	SEOTitle   string `json:"seo_title,omitempty"`
+	ID             string `json:"id"`
+	Label          string `json:"label"`
+	IconSVG        string `json:"icon_svg"`
+	URL            string `json:"url"`
+	PageSlug       string `json:"page_slug,omitempty"`
+	SEOTitle       string `json:"seo_title,omitempty"`
 	SEODescription string `json:"seo_description,omitempty"`
-	SEOOGImage string `json:"seo_og_image,omitempty"`
-	SEORobots  string `json:"seo_robots,omitempty"`
-	Visibility string `json:"visibility"` // "user" or "admin"
-	SortOrder  int    `json:"sort_order"`
+	SEOOGImage     string `json:"seo_og_image,omitempty"`
+	SEORobots      string `json:"seo_robots,omitempty"`
+	Visibility     string `json:"visibility"` // "user" or "admin"
+	SortOrder      int    `json:"sort_order"`
 }
 
 // CustomEndpoint represents an admin-configured API endpoint for quick copy.
@@ -292,9 +292,9 @@ type PublicSettings struct {
 	ChannelMonitorEnabled                bool `json:"channel_monitor_enabled"`
 	ChannelMonitorDefaultIntervalSeconds int  `json:"channel_monitor_default_interval_seconds"`
 
-	AvailableChannelsEnabled bool `json:"available_channels_enabled"`
-	AffiliateEnabled         bool `json:"affiliate_enabled"`
-	RiskControlEnabled       bool `json:"risk_control_enabled"`
+	AvailableChannelsEnabled bool   `json:"available_channels_enabled"`
+	AffiliateEnabled         bool   `json:"affiliate_enabled"`
+	RiskControlEnabled       bool   `json:"risk_control_enabled"`
 	FrontendURL              string `json:"frontend_url,omitempty"`
 }
 
