@@ -18,9 +18,9 @@ type ProviderPriceOverride struct {
 	CacheInputPrice    *float64 `json:"cache_input_price,omitempty"`
 	CacheCreatePrice   *float64 `json:"cache_create_price,omitempty"`
 	CacheCreatePrice1h *float64 `json:"cache_create_price_1h,omitempty"`
-	CacheWritePrice    *float64 `json:"cache_write_price,omitempty"`   // compatibility alias
-	CacheReadPrice     *float64 `json:"cache_read_price,omitempty"`    // compatibility alias
-	ImageOutputPrice   *float64 `json:"image_output_price,omitempty"`  // compatibility alias
+	CacheWritePrice    *float64 `json:"cache_write_price,omitempty"`  // compatibility alias
+	CacheReadPrice     *float64 `json:"cache_read_price,omitempty"`   // compatibility alias
+	ImageOutputPrice   *float64 `json:"image_output_price,omitempty"` // compatibility alias
 	Enabled            bool     `json:"enabled"`
 	Note               string   `json:"note,omitempty"`
 	SortOrder          int      `json:"sort_order"`
