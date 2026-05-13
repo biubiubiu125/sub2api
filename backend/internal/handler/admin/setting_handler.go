@@ -1150,10 +1150,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		return
 	}
 	req.HomeContent = strings.TrimSpace(req.HomeContent)
-	if strings.HasPrefix(req.HomeContent, "http://") || strings.HasPrefix(req.HomeContent, "https://") {
-		response.BadRequest(c, "Home content must be inline public content, not an external URL")
-		return
-	}
 
 	// 自定义菜单项验证
 	const (

@@ -86,7 +86,7 @@ describe('HomeView', () => {
     })))
   })
 
-  it('renders custom home content inside the public content shell', () => {
+  it('renders custom home content in full-page mode', () => {
     const wrapper = mount(HomeView, {
       global: {
         stubs: {
@@ -98,12 +98,10 @@ describe('HomeView', () => {
       },
     })
 
-    expect(wrapper.html()).toContain('MyCustomSite')
-    expect(wrapper.html()).toContain('公开首页')
+    expect(wrapper.html()).not.toContain('Readable public home page')
     expect(wrapper.html()).toContain('<h2>欢迎使用</h2>')
     expect(wrapper.html()).toContain('<p>公开正文</p>')
     expect(wrapper.find('.public-home-content').exists()).toBe(true)
-    expect(wrapper.find('header').exists()).toBe(true)
   })
 
   it('renders markdown home content instead of showing raw markdown text', () => {
@@ -155,5 +153,31 @@ describe('HomeView', () => {
 
     expect(wrapper.find('.public-home-content').exists()).toBe(false)
     expect(wrapper.text()).toContain('Readable public home page')
+  })
+
+  it('renders iframe mode when home content is an external URL', () => {
+    appStore.cachedPublicSettings = {
+      site_name: 'MyCustomSite',
+      site_logo: '/logo.png',
+      site_subtitle: 'Readable public home page',
+      doc_url: '',
+      seo_home_title: '公开首页',
+      home_content: 'https://example.com/embed',
+    }
+
+    const wrapper = mount(HomeView, {
+      global: {
+        stubs: {
+          RouterLink: {
+            props: ['to'],
+            template: '<a :href="to"><slot /></a>',
+          },
+        },
+      },
+    })
+
+    const iframe = wrapper.find('iframe')
+    expect(iframe.exists()).toBe(true)
+    expect(iframe.attributes('src')).toBe('https://example.com/embed')
   })
 })

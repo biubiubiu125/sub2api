@@ -27,14 +27,15 @@
       </template>
 
       <template #table>
-        <div v-if="formError" class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">
-          {{ formError }}
-        </div>
-        <div v-if="saveSuccessMessage" class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
-          {{ saveSuccessMessage }}
-        </div>
+        <div class="h-full overflow-y-auto pr-1">
+          <div v-if="formError" class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200">
+            {{ formError }}
+          </div>
+          <div v-if="saveSuccessMessage" class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
+            {{ saveSuccessMessage }}
+          </div>
 
-        <div class="space-y-4">
+          <div class="space-y-4">
           <div
             v-for="(item, index) in rows"
             :id="`provider-price-row-${item.local_id}`"
@@ -59,7 +60,13 @@
               </div>
               <div>
                 <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">模型名</label>
-                <input v-model.trim="item.model_name" type="text" class="input" placeholder="输入完整模型名" />
+                <input
+                  v-model.trim="item.model_name"
+                  type="text"
+                  class="input"
+                  list="provider-pricing-model-options"
+                  placeholder="输入完整模型名"
+                />
               </div>
             </div>
 
@@ -117,10 +124,14 @@
             </p>
           </div>
 
-          <div v-if="rows.length === 0" class="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-10 text-center text-sm text-gray-500 dark:border-dark-600 dark:bg-dark-900 dark:text-dark-300">
-            暂无 override，当前 `/api/provider/pricing` 会走自动推导逻辑。
+            <div v-if="rows.length === 0" class="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-10 text-center text-sm text-gray-500 dark:border-dark-600 dark:bg-dark-900 dark:text-dark-300">
+              暂无 override，当前 `/api/provider/pricing` 会走自动推导逻辑。
+            </div>
           </div>
         </div>
+        <datalist id="provider-pricing-model-options">
+          <option v-for="model in modelOptions" :key="model" :value="model" />
+        </datalist>
       </template>
     </TablePageLayout>
   </AppLayout>
@@ -133,6 +144,7 @@ import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import { adminAPI } from '@/api'
 import { useAppStore } from '@/stores'
 import type { ProviderPriceOverride } from '@/api/admin/providerPricing'
+import { getModelsByPlatform } from '@/composables/useModelWhitelist'
 
 type EditableRow = ProviderPriceOverride & {
   local_id: string
@@ -153,6 +165,7 @@ const rows = ref<EditableRow[]>([])
 const formError = ref('')
 const saveSuccessMessage = ref('')
 const invalidRowLocalId = ref('')
+const modelOptions = getModelsByPlatform('openai')
 
 function rowToEditable(item: ProviderPriceOverride, index: number): EditableRow {
   return {

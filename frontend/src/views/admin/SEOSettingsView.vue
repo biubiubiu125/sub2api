@@ -499,8 +499,11 @@ async function save() {
       custom_menu_items: form.custom_menu_items,
     }
     Object.assign(form, await adminAPI.settings.updateSettings(payload))
+    await load()
     await appStore.fetchPublicSettings(true)
     appStore.showSuccess('SEO配置保存成功')
+  } catch (error: unknown) {
+    appStore.showError(String((error as { message?: string })?.message || 'SEO配置保存失败'))
   } finally {
     saving.value = false
   }

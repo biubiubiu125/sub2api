@@ -103,12 +103,28 @@ func (s *FrontendServer) serveRenderedHomePage(c *gin.Context, settingsJSON []by
 	seo := buildSEOData(requestPath, settingsJSON)
 	cfg := parseSEOConfig(settingsJSON)
 
-	bodyHTML := tutorialhtml.SanitizeTutorialHTML(strings.TrimSpace(cfg.HomeContent))
-	if strings.TrimSpace(bodyHTML) == "" {
+	homeContent := strings.TrimSpace(cfg.HomeContent)
+	if homeContent == "" {
 		return false
 	}
 
-	pageHTML := buildPublicMarkdownHTML(cfg, seo, normalizeSiteName(cfg.SiteName), bodyHTML)
+	if strings.HasPrefix(homeContent, "http://") || strings.HasPrefix(homeContent, "https://") {
+		pageHTML := buildPublicIframeHTML(cfg, seo, homeContent)
+		c.Header("Cache-Control", "no-cache")
+		if seo.XRobotsTag != "" {
+			c.Header("X-Robots-Tag", seo.XRobotsTag)
+		}
+		c.Data(http.StatusOK, "text/html; charset=utf-8", pageHTML)
+		c.Abort()
+		return true
+	}
+
+	bodyHTML, err := renderMarkdownToHTML(homeContent, "")
+	if err != nil || strings.TrimSpace(bodyHTML) == "" {
+		return false
+	}
+
+	pageHTML := buildPublicHTMLOnlyPage(cfg, seo, bodyHTML)
 	c.Header("Cache-Control", "no-cache")
 	if seo.XRobotsTag != "" {
 		c.Header("X-Robots-Tag", seo.XRobotsTag)
@@ -116,6 +132,29 @@ func (s *FrontendServer) serveRenderedHomePage(c *gin.Context, settingsJSON []by
 	c.Data(http.StatusOK, "text/html; charset=utf-8", pageHTML)
 	c.Abort()
 	return true
+}
+
+func buildPublicHTMLOnlyPage(cfg seoConfig, seo seoData, bodyHTML string) []byte {
+	var buf bytes.Buffer
+	buf.WriteString(`<!doctype html><html lang="` + detectHTMLLang(normalizeSiteName(cfg.SiteName), seo.Title, seo.Description) + `"><head><meta charset="UTF-8">`)
+	buf.WriteString(`<meta name="viewport" content="width=device-width, initial-scale=1.0">`)
+	buf.WriteString(`<title>` + html.EscapeString(seo.Title) + `</title>`)
+	buf.Write(buildSEOMetaTags(seo))
+	buf.WriteString(`</head><body>`)
+	buf.WriteString(bodyHTML)
+	buf.WriteString(`</body></html>`)
+	return buf.Bytes()
+}
+
+func buildPublicIframeHTML(cfg seoConfig, seo seoData, iframeURL string) []byte {
+	var buf bytes.Buffer
+	buf.WriteString(`<!doctype html><html lang="` + detectHTMLLang(normalizeSiteName(cfg.SiteName), seo.Title, seo.Description) + `"><head><meta charset="UTF-8">`)
+	buf.WriteString(`<meta name="viewport" content="width=device-width, initial-scale=1.0">`)
+	buf.WriteString(`<title>` + html.EscapeString(seo.Title) + `</title>`)
+	buf.Write(buildSEOMetaTags(seo))
+	buf.WriteString(`<style>html,body{margin:0;height:100%}iframe{border:0;width:100%;height:100vh;display:block}</style>`)
+	buf.WriteString(`</head><body><iframe src="` + html.EscapeString(iframeURL) + `" allowfullscreen></iframe></body></html>`)
+	return buf.Bytes()
 }
 
 func (s *FrontendServer) serveRenderedHTMLPage(

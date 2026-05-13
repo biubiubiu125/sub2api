@@ -1,39 +1,17 @@
 <template>
-  <!-- Custom Home Content: Public Content Mode -->
-  <div
-    v-if="renderedHomeContent"
-    class="min-h-screen bg-gray-50 text-gray-900 dark:bg-dark-950 dark:text-white"
-  >
-    <header class="border-b border-gray-200 bg-white/95 dark:border-dark-800 dark:bg-dark-900/95">
-      <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
-        <router-link to="/home" class="flex min-w-0 items-center gap-3">
-          <span class="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-dark-800 dark:ring-dark-700">
-            <img :src="siteLogo || '/logo.png'" alt="Logo" class="h-full w-full object-contain" />
-          </span>
-          <span class="truncate text-base font-semibold text-gray-950 dark:text-white">
-            {{ siteName }}
-          </span>
-        </router-link>
-        <router-link
-          to="/login"
-          class="inline-flex flex-shrink-0 items-center justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-primary-600/20 transition hover:bg-primary-700"
-        >
-          {{ t('common.login') }}
-        </router-link>
-      </div>
-    </header>
-
-    <main class="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:py-10">
-      <article class="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-dark-700 dark:bg-dark-900">
-        <div class="border-b border-gray-200 px-6 py-5 dark:border-dark-700">
-          <p class="text-sm font-medium text-primary-700 dark:text-primary-300">{{ siteName }}</p>
-          <h1 class="mt-2 text-3xl font-bold text-gray-950 dark:text-white">
-            {{ homeContentTitle }}
-          </h1>
-        </div>
-        <div class="public-home-content p-6 md:p-10" v-html="renderedHomeContent"></div>
-      </article>
-    </main>
+  <!-- Custom Home Content: Full Page Mode -->
+  <div v-if="isHomeContentUrl || hasRenderableHomeContent" class="min-h-screen">
+    <iframe
+      v-if="isHomeContentUrl"
+      :src="homeContent.trim()"
+      class="h-screen w-full border-0"
+      allowfullscreen
+    ></iframe>
+    <div
+      v-else
+      class="public-home-content min-h-screen bg-gray-50 text-gray-900 dark:bg-dark-950 dark:text-white"
+      v-html="renderedHomeContent"
+    ></div>
   </div>
 
   <!-- Default Home Page -->
@@ -453,8 +431,12 @@ const siteLogo = computed(() => sanitizeUrl(appStore.cachedPublicSettings?.site_
 const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || 'AI API Gateway Platform')
 const docUrl = computed(() => appStore.cachedPublicSettings?.doc_url || appStore.docUrl || '')
 const homeContent = computed(() => appStore.cachedPublicSettings?.home_content || '')
-const homeContentTitle = computed(() => appStore.cachedPublicSettings?.seo_home_title || siteName.value)
+const isHomeContentUrl = computed(() => {
+  const value = homeContent.value.trim()
+  return value.startsWith('http://') || value.startsWith('https://')
+})
 const renderedHomeContent = computed(() => renderPublicMarkdown(homeContent.value))
+const hasRenderableHomeContent = computed(() => !isHomeContentUrl.value && renderedHomeContent.value.trim() !== '')
 
 // Theme
 const isDark = ref(document.documentElement.classList.contains('dark'))
