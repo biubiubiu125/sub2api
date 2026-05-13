@@ -77,7 +77,11 @@ export function collectPrerenderRoutes(
   if (homeEntry) {
     homeEntry.title = String(data?.site_name ?? '').trim() || 'Sub2API'
     if (homeContent) {
-      homeEntry.html = homeContent
+      if (/^https?:\/\//i.test(homeContent)) {
+        homeEntry.html = `<iframe src="${homeContent}" class="h-screen w-full border-0" allowfullscreen></iframe>`
+      } else {
+        homeEntry.markdown = homeContent
+      }
     }
   }
 
