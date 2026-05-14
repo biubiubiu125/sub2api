@@ -308,6 +308,7 @@ onMounted(async () => {
 
   try {
     const settings = await getPublicSettings()
+    appStore.syncPublicSettings(settings)
     turnstileEnabled.value = settings.turnstile_enabled
     turnstileSiteKey.value = settings.turnstile_site_key || ''
     linuxdoOAuthEnabled.value = settings.linuxdo_oauth_enabled

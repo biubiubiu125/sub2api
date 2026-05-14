@@ -302,6 +302,15 @@ export const useAppStore = defineStore('app', () => {
   }
 
   /**
+   * Sync a fetched public-settings payload into the store without triggering
+   * another network request. Useful when a view already loaded fresh settings
+   * and shared branding should update immediately.
+   */
+  function syncPublicSettings(config: PublicSettings): void {
+    applySettings(config)
+  }
+
+  /**
    * Fetch public settings (uses cache unless force=true)
    * @param force - Force refresh from API
    */
@@ -457,6 +466,7 @@ export const useAppStore = defineStore('app', () => {
 
     // Public settings actions
     fetchPublicSettings,
+    syncPublicSettings,
     clearPublicSettingsCache,
     initFromInjectedConfig
   }
