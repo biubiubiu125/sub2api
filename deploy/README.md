@@ -29,6 +29,18 @@ This directory contains files for deploying Sub2API on Linux servers.
 
 ## Docker Deployment (Recommended)
 
+### Embedded Frontend Requirement
+
+Sub2API's SPA frontend must be built and embedded into the Go binary for production use.
+
+The supported production build path is:
+
+1. Build `frontend`
+2. Output the built assets to `backend/internal/web/dist`
+3. Build the backend with `go build -tags embed ./cmd/server`
+
+`deploy/Dockerfile` and the repository-root `Dockerfile` now both follow this flow. `backend/Dockerfile` intentionally fails by default so a backend-only image is not built by mistake; only use it with an explicit `--build-arg ALLOW_BACKEND_ONLY_IMAGE=true` for backend-only debugging.
+
 ### Method 1: One-Click Deployment (Recommended)
 
 Use the automated preparation script for the easiest setup:

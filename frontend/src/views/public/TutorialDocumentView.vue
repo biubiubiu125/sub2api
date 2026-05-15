@@ -40,7 +40,7 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { getPublicSettings } from '@/api/auth'
 import type { PublicSettings } from '@/types'

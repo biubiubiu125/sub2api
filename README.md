@@ -62,6 +62,25 @@
 - 你的定制功能在你自己的仓库里
 - 直接用上游 release / 官方镜像，可能拿不到你的推广返佣和展示调整
 
+### 前端嵌入构建要求
+
+这个仓库的 Web UI 依赖 **embedded frontend**。生产构建必须同时满足下面三点，否则访问 `/`、`/home`、`/dashboard`、`/admin/dashboard` 这类页面时，容易退化成只看到后端文本或 API 响应：
+
+1. 先构建 `frontend`
+2. 将产物输出到 `backend/internal/web/dist`
+3. Go 后端使用 `go build -tags embed ./cmd/server`
+
+本仓库根目录 `Dockerfile` 与 `deploy/Dockerfile` 已按这条链路构建。`backend/Dockerfile` 默认会直接失败，避免误构建出“不带前端”的镜像；只有显式传入 `--build-arg ALLOW_BACKEND_ONLY_IMAGE=true` 时，才允许构建 backend-only 调试镜像。
+
+如果你需要手工本地构建，可使用：
+
+```bash
+pnpm --dir frontend install --frozen-lockfile
+pnpm --dir frontend run build
+cd backend
+go build -tags embed -o ../sub2api ./cmd/server
+```
+
 ### 推荐方式一：本地目录版 Docker Compose
 
 适合正式环境，方便备份、迁移、恢复。

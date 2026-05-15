@@ -15,16 +15,15 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v3"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/setup"
 	"github.com/gin-gonic/gin"
+	"gopkg.in/yaml.v3"
 )
 
 const (
 	// NonceHTMLPlaceholder is the placeholder for nonce in HTML script tags
 	NonceHTMLPlaceholder = "__CSP_NONCE_VALUE__"
-	frontendPrivateKey    = "frontend_private_route"
 )
 
 //go:embed all:dist
@@ -43,13 +42,10 @@ type FrontendServer struct {
 	cache       *HTMLCache
 	settings    PublicSettingsProvider
 	overrideDir string // local file override directory
-	pagesDir    string
-	htmlUserAuth  gin.HandlerFunc
-	htmlAdminAuth gin.HandlerFunc
 }
 
 // NewFrontendServer creates a new frontend server with settings injection
-func NewFrontendServer(settingsProvider PublicSettingsProvider, authGuards ...gin.HandlerFunc) (*FrontendServer, error) {
+func NewFrontendServer(settingsProvider PublicSettingsProvider) (*FrontendServer, error) {
 	distFS, err := fs.Sub(frontendFS, "dist")
 	if err != nil {
 		return nil, err
@@ -70,27 +66,15 @@ func NewFrontendServer(settingsProvider PublicSettingsProvider, authGuards ...gi
 	cache := NewHTMLCache()
 	cache.SetBaseHTML(baseHTML)
 
-	var userAuth gin.HandlerFunc
-	var adminAuth gin.HandlerFunc
-	if len(authGuards) > 0 {
-		userAuth = authGuards[0]
-	}
-	if len(authGuards) > 1 {
-		adminAuth = authGuards[1]
-	}
-
 	dataDir := frontendDataDir()
 
 	return &FrontendServer{
-		distFS:        distFS,
-		fileServer:    http.FileServer(http.FS(distFS)),
-		baseHTML:      baseHTML,
-		cache:         cache,
-		settings:      settingsProvider,
-		overrideDir:   filepath.Join(dataDir, "public"),
-		pagesDir:      filepath.Join(dataDir, "pages"),
-		htmlUserAuth:  userAuth,
-		htmlAdminAuth: adminAuth,
+		distFS:      distFS,
+		fileServer:  http.FileServer(http.FS(distFS)),
+		baseHTML:    baseHTML,
+		cache:       cache,
+		settings:    settingsProvider,
+		overrideDir: filepath.Join(dataDir, "public"),
 	}, nil
 }
 
@@ -128,7 +112,7 @@ func frontendDataDir() string {
 // Middleware returns the Gin middleware handler
 func (s *FrontendServer) Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		path := normalizeRequestPath(c.Request.URL.Path)
+		path := c.Request.URL.Path
 
 		// Skip API routes
 		if shouldBypassEmbeddedFrontend(path) {
@@ -141,23 +125,6 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 			cleanPath = "index.html"
 		}
 
-		if requiresHTMLAuth(path) {
-			allowed, status := s.authorizeHTMLRoute(c, path)
-			if !allowed {
-				if status == http.StatusForbidden {
-					c.String(http.StatusForbidden, "Forbidden")
-				} else {
-					redirect := "/login"
-					if path != "" && path != "/" {
-						redirect = "/login?redirect=" + c.Request.URL.Query().Escape()
-					}
-					c.Redirect(http.StatusFound, redirect)
-				}
-				c.Abort()
-				return
-			}
-		}
-
 		if strings.Contains(filepath.Base(cleanPath), ".") && !s.fileExists(cleanPath) {
 			c.String(http.StatusNotFound, "Frontend not found")
 			c.Abort()
@@ -166,9 +133,6 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 
 		// For index.html or SPA routes, serve with injected settings
 		if cleanPath == "index.html" || !s.fileExists(cleanPath) {
-			if requiresHTMLAuth(path) {
-				c.Set(frontendPrivateKey, true)
-			}
 			s.serveIndexHTML(c)
 			return
 		}
@@ -182,51 +146,6 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 		s.fileServer.ServeHTTP(c.Writer, c.Request)
 		c.Abort()
 	}
-}
-
-func requiresHTMLAuth(path string) bool {
-	switch {
-	case strings.HasPrefix(path, "/admin"):
-		return true
-	case path == "/dashboard":
-		return true
-	case hasKnownRoutePrefix(path,
-		"/keys",
-		"/usage",
-		"/redeem",
-		"/affiliate",
-		"/available-channels",
-		"/profile",
-		"/subscriptions",
-		"/purchase",
-		"/orders",
-		"/payment",
-		"/monitor",
-	):
-		return true
-	default:
-		return false
-	}
-}
-
-func (s *FrontendServer) authorizeHTMLRoute(c *gin.Context, path string) (bool, int) {
-	if c == nil || c.Request == nil {
-		return false, http.StatusUnauthorized
-	}
-	var guard gin.HandlerFunc
-	if strings.HasPrefix(path, "/admin") {
-		guard = s.htmlAdminAuth
-	} else {
-		guard = s.htmlUserAuth
-	}
-	if guard == nil {
-		return true, http.StatusOK
-	}
-	guard(c)
-	if c.IsAborted() {
-		return false, c.Writer.Status()
-	}
-	return true, http.StatusOK
 }
 
 func (s *FrontendServer) fileExists(path string) bool {
@@ -289,7 +208,7 @@ func (s *FrontendServer) serveIndexHTML(c *gin.Context) {
 	settings, err := s.settings.GetPublicSettingsForInjection(ctx)
 	if err != nil {
 		// Fallback: serve without injection
-		c.Data(statusCode, "text/html; charset=utf-8", s.baseHTML)
+		c.Data(http.StatusOK, "text/html; charset=utf-8", s.baseHTML)
 		c.Abort()
 		return
 	}
@@ -315,15 +234,6 @@ func (s *FrontendServer) serveIndexHTML(c *gin.Context) {
 	c.Header("Cache-Control", "no-cache")
 	c.Data(http.StatusOK, "text/html; charset=utf-8", content)
 	c.Abort()
-}
-
-func hasKnownRoutePrefix(path string, prefixes ...string) bool {
-	for _, prefix := range prefixes {
-		if path == prefix || strings.HasPrefix(path, prefix+"/") {
-			return true
-		}
-	}
-	return false
 }
 
 func (s *FrontendServer) injectSettings(settingsJSON []byte) []byte {
@@ -426,16 +336,25 @@ func tryServeOverrideFile(c *gin.Context, overrideDir, cleanPath string) bool {
 
 func shouldBypassEmbeddedFrontend(path string) bool {
 	trimmed := strings.TrimSpace(path)
-	return strings.HasPrefix(trimmed, "/api/") ||
+	return trimmed == "/api" ||
+		strings.HasPrefix(trimmed, "/api/") ||
+		trimmed == "/v1" ||
 		strings.HasPrefix(trimmed, "/v1/") ||
+		trimmed == "/v1beta" ||
 		strings.HasPrefix(trimmed, "/v1beta/") ||
-		strings.HasPrefix(trimmed, "/backend-api/") ||
+		(trimmed == "/backend-api/codex" || strings.HasPrefix(trimmed, "/backend-api/codex/")) ||
+		trimmed == "/antigravity" ||
 		strings.HasPrefix(trimmed, "/antigravity/") ||
-		strings.HasPrefix(trimmed, "/setup/") ||
+		trimmed == "/setup/status" ||
+		trimmed == "/setup/test-db" ||
+		trimmed == "/setup/test-redis" ||
+		trimmed == "/setup/install" ||
+		trimmed == "/chat/completions" ||
 		trimmed == "/health" ||
 		trimmed == "/responses" ||
 		strings.HasPrefix(trimmed, "/responses/") ||
-		strings.HasPrefix(trimmed, "/images/")
+		trimmed == "/images/generations" ||
+		trimmed == "/images/edits"
 }
 
 func serveIndexHTML(c *gin.Context, fsys fs.FS) {

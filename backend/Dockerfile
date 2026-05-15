@@ -1,24 +1,27 @@
+# This Dockerfile builds the backend source tree only and does NOT embed the Vue frontend.
+# Use the repository-root Dockerfile or deploy/Dockerfile for production images so that:
+# 1. frontend is built into backend/internal/web/dist
+# 2. Go is built with -tags embed
 FROM golang:1.26.3-alpine
 
 WORKDIR /app
 
-# 安装必要的工具
+ARG ALLOW_BACKEND_ONLY_IMAGE=false
+
 RUN apk add --no-cache git
 
-# 复制go.mod和go.sum
 COPY go.mod go.sum ./
-
-# 下载依赖
 RUN go mod download
 
-# 复制源代码
 COPY . .
 
-# 构建应用
-RUN go build -o main ./cmd/server/
+RUN if [ "${ALLOW_BACKEND_ONLY_IMAGE}" != "true" ]; then \
+      echo "backend/Dockerfile does not embed frontend. Use ../Dockerfile or ../deploy/Dockerfile for production, or pass --build-arg ALLOW_BACKEND_ONLY_IMAGE=true for an explicit backend-only debug image." >&2; \
+      exit 1; \
+    fi
 
-# 暴露端口
+RUN CGO_ENABLED=0 go build -o main ./cmd/server/
+
 EXPOSE 8080
 
-# 运行应用
 CMD ["./main"]
