@@ -3,17 +3,12 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 import TutorialDocumentView from '../TutorialDocumentView.vue'
 
-const { getPublicSettings, updateRouteSEO } = vi.hoisted(() => ({
+const { getPublicSettings } = vi.hoisted(() => ({
   getPublicSettings: vi.fn(),
-  updateRouteSEO: vi.fn(),
 }))
 
 vi.mock('@/api/auth', () => ({
   getPublicSettings,
-}))
-
-vi.mock('@/utils/seo', () => ({
-  updateRouteSEO,
 }))
 
 vi.mock('vue-i18n', async () => {
@@ -29,7 +24,6 @@ vi.mock('vue-i18n', async () => {
 describe('public TutorialDocumentView', () => {
   beforeEach(() => {
     getPublicSettings.mockReset()
-    updateRouteSEO.mockReset()
 
     getPublicSettings.mockResolvedValue({
       site_name: 'MyCustomSite',
@@ -69,6 +63,5 @@ describe('public TutorialDocumentView', () => {
     expect(wrapper.html()).toContain('教程文档')
     expect(wrapper.html()).toContain('<h2>教程标题</h2>')
     expect(wrapper.html()).toContain('<p>富文本正文</p>')
-    expect(updateRouteSEO).toHaveBeenCalled()
   })
 })

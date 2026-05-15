@@ -54,13 +54,6 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 		ContactInfo:                      settings.ContactInfo,
 		DocURL:                           settings.DocURL,
 		HomeContent:                      settings.HomeContent,
-		SEODefaultTitle:                  settings.SEODefaultTitle,
-		SEOHomeTitle:                     settings.SEOHomeTitle,
-		SEODefaultDescription:            settings.SEODefaultDescription,
-		SEOHomeDescription:               settings.SEOHomeDescription,
-		SEODefaultOGImage:                settings.SEODefaultOGImage,
-		SEODefaultRobots:                 settings.SEODefaultRobots,
-		SEOHomeRobots:                    settings.SEOHomeRobots,
 		HideCcsImportButton:              settings.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:      settings.PurchaseSubscriptionEnabled,
 		PurchaseSubscriptionURL:          settings.PurchaseSubscriptionURL,
@@ -101,13 +94,9 @@ func publicLoginAgreementDocumentsToDTO(items []service.LoginAgreementDocument) 
 	result := make([]dto.LoginAgreementDocument, 0, len(items))
 	for _, item := range items {
 		result = append(result, dto.LoginAgreementDocument{
-			ID:             item.ID,
-			Title:          item.Title,
-			ContentMD:      item.ContentMD,
-			SEOTitle:       item.SEOTitle,
-			SEODescription: item.SEODescription,
-			SEOOGImage:     item.SEOOGImage,
-			SEORobots:      item.SEORobots,
+			ID:        item.ID,
+			Title:     item.Title,
+			ContentMD: item.ContentMD,
 		})
 	}
 	return result

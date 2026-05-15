@@ -60,7 +60,6 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { getPublicSettings } from '@/api/auth'
-import { updateRouteSEO } from '@/utils/seo'
 import type { CustomMenuItem, PublicSettings } from '@/types'
 import { renderPublicMarkdown } from '@/utils/publicContent.ts'
 import { sanitizeUrl } from '@/utils/url'
@@ -160,7 +159,6 @@ onMounted(async () => {
   loading.value = true
   try {
     settings.value = await getPublicSettings()
-    updateRouteSEO(route, settings.value)
   } finally {
     loading.value = false
   }

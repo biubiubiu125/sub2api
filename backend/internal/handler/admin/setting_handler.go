@@ -61,16 +61,6 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-var allowedSEORobotsValues = map[string]struct{}{
-	"":                  {},
-	"index, follow":     {},
-	"noindex, nofollow": {},
-	"index, nofollow":   {},
-	"noindex, follow":   {},
-}
-
-var seoInlineImagePattern = regexp.MustCompile(`^data:image/(png|jpeg|jpg|gif|webp);base64,[a-z0-9+/=\s]+$`)
-
 func validatePublicSiteBaseURL(raw string) error {
 	if err := config.ValidateAbsoluteHTTPURL(raw); err != nil {
 		return err
@@ -100,18 +90,7 @@ func validateSEOImageURL(raw string) error {
 		}
 		return nil
 	}
-	if seoInlineImagePattern.MatchString(strings.ToLower(raw)) {
-		return nil
-	}
 	return config.ValidateAbsoluteHTTPURL(raw)
-}
-
-func validateSEORobotsValue(raw string) error {
-	raw = strings.TrimSpace(strings.ToLower(raw))
-	if _, ok := allowedSEORobotsValues[raw]; ok {
-		return nil
-	}
-	return fmt.Errorf("unsupported robots value")
 }
 
 // SettingHandler 系统设置处理器
@@ -252,13 +231,6 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		ContactInfo:                            settings.ContactInfo,
 		DocURL:                                 settings.DocURL,
 		HomeContent:                            settings.HomeContent,
-		SEODefaultTitle:                        settings.SEODefaultTitle,
-		SEOHomeTitle:                           settings.SEOHomeTitle,
-		SEODefaultDescription:                  settings.SEODefaultDescription,
-		SEOHomeDescription:                     settings.SEOHomeDescription,
-		SEODefaultOGImage:                      settings.SEODefaultOGImage,
-		SEODefaultRobots:                       settings.SEODefaultRobots,
-		SEOHomeRobots:                          settings.SEOHomeRobots,
 		HideCcsImportButton:                    settings.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:            settings.PurchaseSubscriptionEnabled,
 		PurchaseSubscriptionURL:                settings.PurchaseSubscriptionURL,
@@ -378,13 +350,9 @@ func loginAgreementDocumentsToDTO(items []service.LoginAgreementDocument) []dto.
 	result := make([]dto.LoginAgreementDocument, 0, len(items))
 	for _, item := range items {
 		result = append(result, dto.LoginAgreementDocument{
-			ID:             item.ID,
-			Title:          item.Title,
-			ContentMD:      item.ContentMD,
-			SEOTitle:       item.SEOTitle,
-			SEODescription: item.SEODescription,
-			SEOOGImage:     item.SEOOGImage,
-			SEORobots:      item.SEORobots,
+			ID:        item.ID,
+			Title:     item.Title,
+			ContentMD: item.ContentMD,
 		})
 	}
 	return result
@@ -399,13 +367,9 @@ func loginAgreementDocumentsToService(items []dto.LoginAgreementDocument) []serv
 			continue
 		}
 		result = append(result, service.LoginAgreementDocument{
-			ID:             strings.TrimSpace(item.ID),
-			Title:          title,
-			ContentMD:      content,
-			SEOTitle:       strings.TrimSpace(item.SEOTitle),
-			SEODescription: strings.TrimSpace(item.SEODescription),
-			SEOOGImage:     strings.TrimSpace(item.SEOOGImage),
-			SEORobots:      strings.TrimSpace(item.SEORobots),
+			ID:        strings.TrimSpace(item.ID),
+			Title:     title,
+			ContentMD: content,
 		})
 	}
 	return result
@@ -507,13 +471,6 @@ type UpdateSettingsRequest struct {
 	ContactInfo                 string                `json:"contact_info"`
 	DocURL                      string                `json:"doc_url"`
 	HomeContent                 string                `json:"home_content"`
-	SEODefaultTitle             string                `json:"seo_default_title"`
-	SEOHomeTitle                string                `json:"seo_home_title"`
-	SEODefaultDescription       string                `json:"seo_default_description"`
-	SEOHomeDescription          string                `json:"seo_home_description"`
-	SEODefaultOGImage           string                `json:"seo_default_og_image"`
-	SEODefaultRobots            string                `json:"seo_default_robots"`
-	SEOHomeRobots               string                `json:"seo_home_robots"`
 	HideCcsImportButton         bool                  `json:"hide_ccs_import_button"`
 	PurchaseSubscriptionEnabled *bool                 `json:"purchase_subscription_enabled"`
 	PurchaseSubscriptionURL     *string               `json:"purchase_subscription_url"`
@@ -761,14 +718,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		}
 		if len(doc.ContentMD) > 200*1024 {
 			response.BadRequest(c, "Login agreement document content is too large (max 200KB)")
-			return
-		}
-		if err := validateSEOImageURL(doc.SEOOGImage); err != nil {
-			response.BadRequest(c, "Login agreement document SEO OG image must be an absolute http(s) URL, a site-relative path, or a supported image data URL")
-			return
-		}
-		if err := validateSEORobotsValue(doc.SEORobots); err != nil {
-			response.BadRequest(c, "Login agreement document SEO robots value is invalid")
 			return
 		}
 	}
@@ -1134,21 +1083,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		response.BadRequest(c, "Site logo must be an absolute http(s) URL, a site-relative path, or a supported image data URL")
 		return
 	}
-	req.SEODefaultOGImage = strings.TrimSpace(req.SEODefaultOGImage)
-	if err := validateSEOImageURL(req.SEODefaultOGImage); err != nil {
-		response.BadRequest(c, "Default SEO OG image must be an absolute http(s) URL, a site-relative path, or a supported image data URL")
-		return
-	}
-	req.SEODefaultRobots = strings.TrimSpace(req.SEODefaultRobots)
-	if err := validateSEORobotsValue(req.SEODefaultRobots); err != nil {
-		response.BadRequest(c, "Default SEO robots value is invalid")
-		return
-	}
-	req.SEOHomeRobots = strings.TrimSpace(req.SEOHomeRobots)
-	if err := validateSEORobotsValue(req.SEOHomeRobots); err != nil {
-		response.BadRequest(c, "Home SEO robots value is invalid")
-		return
-	}
 	req.HomeContent = strings.TrimSpace(req.HomeContent)
 
 	// 自定义菜单项验证
@@ -1218,14 +1152,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			if len(item.IconSVG) > maxMenuItemIconSVGLen {
 				response.BadRequest(c, "Custom menu item icon SVG is too large (max 10KB)")
-				return
-			}
-			if err := validateSEOImageURL(item.SEOOGImage); err != nil {
-				response.BadRequest(c, "Custom menu item SEO OG image must be an absolute http(s) URL, a site-relative path, or a supported image data URL")
-				return
-			}
-			if err := validateSEORobotsValue(item.SEORobots); err != nil {
-				response.BadRequest(c, "Custom menu item SEO robots value is invalid")
 				return
 			}
 			// Auto-generate ID if missing
@@ -1443,13 +1369,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ContactInfo:                      req.ContactInfo,
 		DocURL:                           req.DocURL,
 		HomeContent:                      req.HomeContent,
-		SEODefaultTitle:                  req.SEODefaultTitle,
-		SEOHomeTitle:                     req.SEOHomeTitle,
-		SEODefaultDescription:            req.SEODefaultDescription,
-		SEOHomeDescription:               req.SEOHomeDescription,
-		SEODefaultOGImage:                req.SEODefaultOGImage,
-		SEODefaultRobots:                 req.SEODefaultRobots,
-		SEOHomeRobots:                    req.SEOHomeRobots,
 		HideCcsImportButton:              req.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:      purchaseEnabled,
 		PurchaseSubscriptionURL:          purchaseURL,
@@ -1810,13 +1729,6 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ContactInfo:                            updatedSettings.ContactInfo,
 		DocURL:                                 updatedSettings.DocURL,
 		HomeContent:                            updatedSettings.HomeContent,
-		SEODefaultTitle:                        updatedSettings.SEODefaultTitle,
-		SEOHomeTitle:                           updatedSettings.SEOHomeTitle,
-		SEODefaultDescription:                  updatedSettings.SEODefaultDescription,
-		SEOHomeDescription:                     updatedSettings.SEOHomeDescription,
-		SEODefaultOGImage:                      updatedSettings.SEODefaultOGImage,
-		SEODefaultRobots:                       updatedSettings.SEODefaultRobots,
-		SEOHomeRobots:                          updatedSettings.SEOHomeRobots,
 		HideCcsImportButton:                    updatedSettings.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:            updatedSettings.PurchaseSubscriptionEnabled,
 		PurchaseSubscriptionURL:                updatedSettings.PurchaseSubscriptionURL,

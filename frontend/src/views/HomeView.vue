@@ -1,23 +1,13 @@
 <template>
   <!-- Custom Home Content: Full Page Mode -->
-  <div v-if="isHomeContentUrl || isHomeContentDocument || hasRenderableHomeContent" class="min-h-screen">
+  <div v-if="homeContent" class="min-h-screen">
     <iframe
       v-if="isHomeContentUrl"
-      :src="trimmedHomeContent"
+      :src="homeContent.trim()"
       class="h-screen w-full border-0"
       allowfullscreen
     ></iframe>
-    <iframe
-      v-else-if="isHomeContentDocument"
-      :srcdoc="homeContentDocumentSrcdoc"
-      class="min-h-screen w-full border-0"
-      sandbox="allow-forms allow-popups allow-top-navigation-by-user-activation"
-    ></iframe>
-    <div
-      v-else
-      class="public-home-content min-h-screen bg-gray-50 text-gray-900 dark:bg-dark-950 dark:text-white"
-      v-html="renderedHomeContent"
-    ></div>
+    <div v-else v-html="homeContent"></div>
   </div>
 
   <!-- Default Home Page -->
@@ -423,9 +413,6 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore, useAppStore } from '@/stores'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import Icon from '@/components/icons/Icon.vue'
-import { renderPublicMarkdown, sanitizePublicHTML } from '@/utils/publicContent.ts'
-import { sanitizeUrl } from '@/utils/url'
-
 const { t } = useI18n()
 
 const authStore = useAuthStore()
@@ -433,27 +420,14 @@ const appStore = useAppStore()
 
 // Site settings - directly from appStore (already initialized from injected config)
 const siteName = computed(() => appStore.cachedPublicSettings?.site_name || appStore.siteName || 'Sub2API')
-const siteLogo = computed(() => sanitizeUrl(appStore.cachedPublicSettings?.site_logo || appStore.siteLogo || '', { allowRelative: true }))
+const siteLogo = computed(() => appStore.cachedPublicSettings?.site_logo || appStore.siteLogo || '')
 const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || 'AI API Gateway Platform')
 const docUrl = computed(() => appStore.cachedPublicSettings?.doc_url || appStore.docUrl || '')
 const homeContent = computed(() => appStore.cachedPublicSettings?.home_content || '')
-const trimmedHomeContent = computed(() => homeContent.value.trim())
 const isHomeContentUrl = computed(() => {
-  const value = trimmedHomeContent.value
-  return value.startsWith('http://') || value.startsWith('https://')
+  const content = homeContent.value.trim()
+  return content.startsWith('http://') || content.startsWith('https://')
 })
-const isHomeContentDocument = computed(() => {
-  if (isHomeContentUrl.value) return false
-  return /<!doctype html|<html[\s>]|<head[\s>]|<body[\s>]/i.test(trimmedHomeContent.value)
-})
-const renderedHomeContent = computed(() => {
-  const raw = trimmedHomeContent.value
-  if (!raw || isHomeContentUrl.value || isHomeContentDocument.value) return ''
-  const looksLikeHTML = /<[a-z][\s\S]*>/i.test(raw)
-  return looksLikeHTML ? sanitizePublicHTML(raw) : renderPublicMarkdown(raw)
-})
-const hasRenderableHomeContent = computed(() => !isHomeContentUrl.value && !isHomeContentDocument.value && renderedHomeContent.value.trim() !== '')
-const homeContentDocumentSrcdoc = computed(() => buildHomeDocumentSrcdoc(trimmedHomeContent.value))
 
 // Theme
 const isDark = ref(document.documentElement.classList.contains('dark'))
@@ -493,21 +467,6 @@ function initTheme() {
   }
 }
 
-function buildHomeDocumentSrcdoc(raw: string): string {
-  if (!raw) return ''
-  let sanitized = raw
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/<meta\b[^>]*http-equiv\s*=\s*["']?refresh["']?[^>]*>/gi, '')
-
-  if (/<head[\s>]/i.test(sanitized)) {
-    return sanitized.replace(/<head([^>]*)>/i, '<head$1><base href="/" target="_top">')
-  }
-  if (/<html[\s>]/i.test(sanitized)) {
-    return sanitized.replace(/<html([^>]*)>/i, '<html$1><head><base href="/" target="_top"></head>')
-  }
-  return `<base href="/" target="_top">${sanitized}`
-}
-
 onMounted(() => {
   initTheme()
 
@@ -526,55 +485,6 @@ onMounted(() => {
 .terminal-container {
   position: relative;
   display: inline-block;
-}
-
-.public-home-content {
-  line-height: 1.75;
-  overflow-wrap: anywhere;
-}
-
-.public-home-content :deep(h1) {
-  @apply mb-4 mt-8 border-b border-gray-200 pb-3 text-3xl font-bold dark:border-dark-700;
-}
-
-.public-home-content :deep(h2) {
-  @apply mb-3 mt-7 text-2xl font-bold;
-}
-
-.public-home-content :deep(h3) {
-  @apply mb-2 mt-6 text-xl font-semibold;
-}
-
-.public-home-content :deep(p) {
-  @apply mb-4 text-gray-700 dark:text-dark-200;
-}
-
-.public-home-content :deep(a) {
-  @apply text-primary-600 underline underline-offset-4 hover:text-primary-700 dark:text-primary-300 dark:hover:text-primary-200;
-}
-
-.public-home-content :deep(ul) {
-  @apply mb-4 list-disc pl-6;
-}
-
-.public-home-content :deep(ol) {
-  @apply mb-4 list-decimal pl-6;
-}
-
-.public-home-content :deep(img) {
-  @apply my-5 h-auto max-w-full rounded-lg;
-}
-
-.public-home-content :deep(code) {
-  @apply rounded bg-gray-100 px-1.5 py-0.5 font-mono text-sm dark:bg-dark-700;
-}
-
-.public-home-content :deep(pre) {
-  @apply my-4 overflow-x-auto rounded-xl bg-gray-900 p-4 text-gray-100;
-}
-
-.public-home-content :deep(pre code) {
-  @apply bg-transparent p-0 text-inherit;
 }
 
 /* Terminal Window */

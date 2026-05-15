@@ -73,7 +73,6 @@ export function useOnboardingTour(options: OnboardingOptions) {
   ])
 
   const adminOverlayBlocklist = new Set([
-    '/admin/seo',
     '/admin/settings',
   ])
 

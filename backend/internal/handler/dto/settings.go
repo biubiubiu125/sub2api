@@ -7,17 +7,13 @@ import (
 
 // CustomMenuItem represents a user-configured custom menu entry.
 type CustomMenuItem struct {
-	ID             string `json:"id"`
-	Label          string `json:"label"`
-	IconSVG        string `json:"icon_svg"`
-	URL            string `json:"url"`
-	PageSlug       string `json:"page_slug,omitempty"`
-	SEOTitle       string `json:"seo_title,omitempty"`
-	SEODescription string `json:"seo_description,omitempty"`
-	SEOOGImage     string `json:"seo_og_image,omitempty"`
-	SEORobots      string `json:"seo_robots,omitempty"`
-	Visibility     string `json:"visibility"` // "user" or "admin"
-	SortOrder      int    `json:"sort_order"`
+	ID         string `json:"id"`
+	Label      string `json:"label"`
+	IconSVG    string `json:"icon_svg"`
+	URL        string `json:"url"`
+	PageSlug   string `json:"page_slug,omitempty"`
+	Visibility string `json:"visibility"` // "user" or "admin"
+	SortOrder  int    `json:"sort_order"`
 }
 
 // CustomEndpoint represents an admin-configured API endpoint for quick copy.
@@ -117,13 +113,6 @@ type SystemSettings struct {
 	ContactInfo                 string           `json:"contact_info"`
 	DocURL                      string           `json:"doc_url"`
 	HomeContent                 string           `json:"home_content"`
-	SEODefaultTitle             string           `json:"seo_default_title"`
-	SEOHomeTitle                string           `json:"seo_home_title"`
-	SEODefaultDescription       string           `json:"seo_default_description"`
-	SEOHomeDescription          string           `json:"seo_home_description"`
-	SEODefaultOGImage           string           `json:"seo_default_og_image"`
-	SEODefaultRobots            string           `json:"seo_default_robots"`
-	SEOHomeRobots               string           `json:"seo_home_robots"`
 	HideCcsImportButton         bool             `json:"hide_ccs_import_button"`
 	PurchaseSubscriptionEnabled bool             `json:"purchase_subscription_enabled"`
 	PurchaseSubscriptionURL     string           `json:"purchase_subscription_url"`
@@ -257,13 +246,6 @@ type PublicSettings struct {
 	ContactInfo                      string                   `json:"contact_info"`
 	DocURL                           string                   `json:"doc_url"`
 	HomeContent                      string                   `json:"home_content"`
-	SEODefaultTitle                  string                   `json:"seo_default_title,omitempty"`
-	SEOHomeTitle                     string                   `json:"seo_home_title,omitempty"`
-	SEODefaultDescription            string                   `json:"seo_default_description,omitempty"`
-	SEOHomeDescription               string                   `json:"seo_home_description,omitempty"`
-	SEODefaultOGImage                string                   `json:"seo_default_og_image,omitempty"`
-	SEODefaultRobots                 string                   `json:"seo_default_robots,omitempty"`
-	SEOHomeRobots                    string                   `json:"seo_home_robots,omitempty"`
 	HideCcsImportButton              bool                     `json:"hide_ccs_import_button"`
 	PurchaseSubscriptionEnabled      bool                     `json:"purchase_subscription_enabled"`
 	PurchaseSubscriptionURL          string                   `json:"purchase_subscription_url"`
@@ -299,13 +281,9 @@ type PublicSettings struct {
 }
 
 type LoginAgreementDocument struct {
-	ID             string `json:"id"`
-	Title          string `json:"title"`
-	ContentMD      string `json:"content_md"`
-	SEOTitle       string `json:"seo_title,omitempty"`
-	SEODescription string `json:"seo_description,omitempty"`
-	SEOOGImage     string `json:"seo_og_image,omitempty"`
-	SEORobots      string `json:"seo_robots,omitempty"`
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	ContentMD string `json:"content_md"`
 }
 
 // OverloadCooldownSettings 529过载冷却配置 DTO

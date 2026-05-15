@@ -89,7 +89,6 @@ import { useRoute, RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import { getPublicSettings } from '@/api/auth'
-import { updateRouteSEO } from '@/utils/seo'
 import { sanitizeUrl } from '@/utils/url'
 import type { LoginAgreementDocument, PublicSettings } from '@/types'
 import { renderPublicMarkdown } from '@/utils/publicContent.ts'
@@ -147,7 +146,6 @@ onMounted(async () => {
   loadError.value = false
   try {
     settings.value = await getPublicSettings()
-    updateRouteSEO(route, settings.value)
   } catch {
     loadError.value = true
   } finally {

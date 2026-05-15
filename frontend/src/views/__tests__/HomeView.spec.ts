@@ -16,7 +16,6 @@ const appStore = {
     site_logo: '/logo.png',
     site_subtitle: 'Readable public home page',
     doc_url: '',
-    seo_home_title: '公开首页',
     home_content: '<h2>欢迎使用</h2><p>公开正文</p>',
   },
   siteName: 'MyCustomSite',
@@ -71,7 +70,6 @@ describe('HomeView', () => {
       site_logo: '/logo.png',
       site_subtitle: 'Readable public home page',
       doc_url: '',
-      seo_home_title: '公开首页',
       home_content: '<h2>欢迎使用</h2><p>公开正文</p>',
     }
     vi.stubGlobal('matchMedia', vi.fn().mockImplementation(() => ({
@@ -86,14 +84,13 @@ describe('HomeView', () => {
     })))
   })
 
-  it('renders sanitized html home content in full-page mode while preserving safe structure', () => {
+  it('renders html home content in full-page mode', () => {
     appStore.cachedPublicSettings = {
       site_name: 'MyCustomSite',
       site_logo: '/logo.png',
       site_subtitle: 'Readable public home page',
       doc_url: '',
-      seo_home_title: '公开首页',
-      home_content: '<div class="hero-shell"><h2>欢迎使用</h2><svg viewBox="0 0 24 24"><path d="M4 12h16"></path></svg><p>公开正文</p></div>',
+      home_content: '<div class="hero-shell"><h2>欢迎使用</h2><p>公开正文</p></div>',
     }
 
     const wrapper = mount(HomeView, {
@@ -107,63 +104,9 @@ describe('HomeView', () => {
       },
     })
 
-    expect(wrapper.html()).not.toContain('Readable public home page')
+    expect(wrapper.html()).toContain('class="hero-shell"')
     expect(wrapper.html()).toContain('<h2>欢迎使用</h2>')
     expect(wrapper.html()).toContain('<p>公开正文</p>')
-    expect(wrapper.find('.public-home-content').exists()).toBe(true)
-    expect(wrapper.html()).toContain('class="hero-shell"')
-    expect(wrapper.html()).toContain('<svg viewBox="0 0 24 24">')
-  })
-
-  it('renders markdown home content instead of showing raw markdown text', () => {
-    appStore.cachedPublicSettings = {
-      site_name: 'MyCustomSite',
-      site_logo: '/logo.png',
-      site_subtitle: 'Readable public home page',
-      doc_url: '',
-      seo_home_title: '鍏紑棣栭〉',
-      home_content: '# RK AI\n\n- 绗竴椤�\n- 绗簩椤�',
-    }
-
-    const wrapper = mount(HomeView, {
-      global: {
-        stubs: {
-          RouterLink: {
-            props: ['to'],
-            template: '<a :href="to"><slot /></a>',
-          },
-        },
-      },
-    })
-
-    expect(wrapper.find('.public-home-content h1').exists()).toBe(true)
-    expect(wrapper.find('.public-home-content ul').exists()).toBe(true)
-    expect(wrapper.html()).not.toContain('# RK AI')
-  })
-
-  it('falls back to the default home page when sanitized home content is empty', () => {
-    appStore.cachedPublicSettings = {
-      site_name: 'MyCustomSite',
-      site_logo: '/logo.png',
-      site_subtitle: 'Readable public home page',
-      doc_url: '',
-      seo_home_title: '公开首页',
-      home_content: '<script>alert(1)</script><iframe src=\"https://evil.example\"></iframe>',
-    }
-
-    const wrapper = mount(HomeView, {
-      global: {
-        stubs: {
-          RouterLink: {
-            props: ['to'],
-            template: '<a :href="to"><slot /></a>',
-          },
-        },
-      },
-    })
-
-    expect(wrapper.find('.public-home-content').exists()).toBe(false)
-    expect(wrapper.text()).toContain('Readable public home page')
   })
 
   it('renders iframe mode when home content is an external URL', () => {
@@ -172,7 +115,6 @@ describe('HomeView', () => {
       site_logo: '/logo.png',
       site_subtitle: 'Readable public home page',
       doc_url: '',
-      seo_home_title: '公开首页',
       home_content: 'https://example.com/embed',
     }
 
@@ -190,32 +132,5 @@ describe('HomeView', () => {
     const iframe = wrapper.find('iframe')
     expect(iframe.exists()).toBe(true)
     expect(iframe.attributes('src')).toBe('https://example.com/embed')
-  })
-
-  it('renders full html documents through iframe srcdoc to preserve embedded styles', () => {
-    appStore.cachedPublicSettings = {
-      site_name: 'MyCustomSite',
-      site_logo: '/logo.png',
-      site_subtitle: 'Readable public home page',
-      doc_url: '',
-      seo_home_title: '公开首页',
-      home_content: '<!DOCTYPE html><html><head><style>.hero{color:red}</style></head><body><div class="hero">Doc Home</div></body></html>',
-    }
-
-    const wrapper = mount(HomeView, {
-      global: {
-        stubs: {
-          RouterLink: {
-            props: ['to'],
-            template: '<a :href="to"><slot /></a>',
-          },
-        },
-      },
-    })
-
-    const iframe = wrapper.find('iframe')
-    expect(iframe.exists()).toBe(true)
-    expect(iframe.attributes('srcdoc')).toContain('<style>.hero{color:red}</style>')
-    expect(iframe.attributes('srcdoc')).toContain('<base href="/" target="_top">')
   })
 })

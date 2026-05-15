@@ -112,13 +112,6 @@ type SystemSettings struct {
 	ContactInfo                 string
 	DocURL                      string
 	HomeContent                 string
-	SEODefaultTitle             string
-	SEOHomeTitle                string
-	SEODefaultDescription       string
-	SEOHomeDescription          string
-	SEODefaultOGImage           string
-	SEODefaultRobots            string
-	SEOHomeRobots               string
 	HideCcsImportButton         bool
 	PurchaseSubscriptionEnabled bool
 	PurchaseSubscriptionURL     string
@@ -226,13 +219,6 @@ type PublicSettings struct {
 	ContactInfo                      string
 	DocURL                           string
 	HomeContent                      string
-	SEODefaultTitle                  string
-	SEOHomeTitle                     string
-	SEODefaultDescription            string
-	SEOHomeDescription               string
-	SEODefaultOGImage                string
-	SEODefaultRobots                 string
-	SEOHomeRobots                    string
 	HideCcsImportButton              bool
 
 	PurchaseSubscriptionEnabled bool
@@ -271,13 +257,9 @@ type PublicSettings struct {
 }
 
 type LoginAgreementDocument struct {
-	ID             string `json:"id"`
-	Title          string `json:"title"`
-	ContentMD      string `json:"content_md"`
-	SEOTitle       string `json:"seo_title,omitempty"`
-	SEODescription string `json:"seo_description,omitempty"`
-	SEOOGImage     string `json:"seo_og_image,omitempty"`
-	SEORobots      string `json:"seo_robots,omitempty"`
+	ID        string `json:"id"`
+	Title     string `json:"title"`
+	ContentMD string `json:"content_md"`
 }
 
 type WeChatConnectOAuthConfig struct {

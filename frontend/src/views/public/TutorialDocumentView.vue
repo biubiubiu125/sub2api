@@ -44,7 +44,6 @@ import { RouterLink, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { getPublicSettings } from '@/api/auth'
 import type { PublicSettings } from '@/types'
-import { updateRouteSEO } from '@/utils/seo'
 import { sanitizePublicHTML } from '@/utils/publicContent.ts'
 import { sanitizeUrl } from '@/utils/url'
 
@@ -52,7 +51,6 @@ interface TutorialDocumentPayload {
   content_html: string
 }
 
-const route = useRoute()
 const { t } = useI18n()
 
 const loading = ref(true)
@@ -82,8 +80,6 @@ onMounted(async () => {
     } else {
       renderedHtml.value = '<p class="text-red-500">页面未找到。</p>'
     }
-
-    updateRouteSEO(route, publicSettingsResp)
   } finally {
     loading.value = false
   }

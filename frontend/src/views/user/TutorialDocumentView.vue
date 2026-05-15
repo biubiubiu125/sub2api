@@ -20,8 +20,6 @@
 import { onMounted, ref } from 'vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { useAppStore } from '@/stores'
-import { updateRouteSEO } from '@/utils/seo'
-import { useRoute } from 'vue-router'
 import { sanitizePublicHTML } from '@/utils/publicContent.ts'
 
 interface TutorialDocumentPayload {
@@ -29,7 +27,6 @@ interface TutorialDocumentPayload {
 }
 
 const appStore = useAppStore()
-const route = useRoute()
 const loading = ref(true)
 const renderedHtml = ref('')
 
@@ -50,8 +47,6 @@ onMounted(async () => {
     } else {
       renderedHtml.value = '<p class="text-red-500">页面未找到。</p>'
     }
-
-    updateRouteSEO(route, appStore.cachedPublicSettings)
   } finally {
     loading.value = false
   }

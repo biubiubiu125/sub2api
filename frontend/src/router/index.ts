@@ -10,7 +10,7 @@ import { useReferralStore } from '@/stores/referral'
 import { useNavigationLoadingState } from '@/composables/useNavigationLoading'
 import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { captureAffiliateCodeFromQuery } from '@/utils/affiliateCookie'
-import { updateRouteSEO } from '@/utils/seo'
+import { resolveDocumentTitle } from './title'
 
 /**
  * Route definitions with lazy loading
@@ -634,16 +634,6 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
-    path: '/admin/seo',
-    name: 'AdminSEOSettings',
-    component: () => import('@/views/admin/SEOSettingsView.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: true,
-      title: 'SEO配置'
-    }
-  },
-  {
     path: '/admin/tutorial',
     name: 'AdminTutorialEditor',
     component: () => import('@/views/admin/TutorialEditorView.vue'),
@@ -805,7 +795,19 @@ router.beforeEach(async (to, _from, next) => {
 
   // Set page title
   const appStore = useAppStore()
-  updateRouteSEO(to, appStore.cachedPublicSettings)
+  if (to.name === 'CustomPage') {
+    const id = to.params.id as string
+    const publicItems = appStore.cachedPublicSettings?.custom_menu_items ?? []
+    const menuItem = publicItems.find((item) => item.id === id)
+    if (menuItem?.label) {
+      const siteName = appStore.siteName || 'Sub2API'
+      document.title = `${menuItem.label} - ${siteName}`
+    } else {
+      document.title = resolveDocumentTitle(to.meta.title, appStore.siteName, to.meta.titleKey as string)
+    }
+  } else {
+    document.title = resolveDocumentTitle(to.meta.title, appStore.siteName, to.meta.titleKey as string)
+  }
 
   // Check if route requires authentication
   const requiresAuth = to.meta.requiresAuth !== false // Default to true
@@ -926,8 +928,6 @@ router.beforeEach(async (to, _from, next) => {
  * Navigation guard: End loading and trigger prefetch
  */
 router.afterEach((to) => {
-  const appStore = useAppStore()
-  updateRouteSEO(to, appStore.cachedPublicSettings)
   // 结束导航加载状态
   navigationLoading.endNavigation()
 

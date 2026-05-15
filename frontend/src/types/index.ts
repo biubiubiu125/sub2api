@@ -326,10 +326,6 @@ export interface CustomMenuItem {
   icon_svg: string
   url: string
   page_slug?: string
-  seo_title?: string
-  seo_description?: string
-  seo_og_image?: string
-  seo_robots?: string
   visibility: 'user' | 'admin'
   sort_order: number
 }
@@ -344,10 +340,6 @@ export interface LoginAgreementDocument {
   id: string
   title: string
   content_md: string
-  seo_title?: string
-  seo_description?: string
-  seo_og_image?: string
-  seo_robots?: string
 }
 
 export interface PublicSettings {
@@ -373,13 +365,6 @@ export interface PublicSettings {
   contact_info: string
   doc_url: string
   home_content: string
-  seo_default_title?: string
-  seo_home_title?: string
-  seo_default_description?: string
-  seo_home_description?: string
-  seo_default_og_image?: string
-  seo_default_robots?: string
-  seo_home_robots?: string
   hide_ccs_import_button: boolean
   payment_enabled: boolean
   risk_control_enabled: boolean
