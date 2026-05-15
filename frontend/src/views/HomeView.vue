@@ -7,7 +7,7 @@
       class="h-screen w-full border-0"
       allowfullscreen
     ></iframe>
-    <div v-else v-html="homeContent"></div>
+    <div v-else v-html="renderedHomeContent"></div>
   </div>
 
   <!-- Default Home Page -->
@@ -413,6 +413,7 @@ import { useI18n } from 'vue-i18n'
 import { useAuthStore, useAppStore } from '@/stores'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import Icon from '@/components/icons/Icon.vue'
+import { renderPublicMarkdown } from '@/utils/publicContent.ts'
 const { t } = useI18n()
 
 const authStore = useAuthStore()
@@ -424,6 +425,7 @@ const siteLogo = computed(() => appStore.cachedPublicSettings?.site_logo || appS
 const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || 'AI API Gateway Platform')
 const docUrl = computed(() => appStore.cachedPublicSettings?.doc_url || appStore.docUrl || '')
 const homeContent = computed(() => appStore.cachedPublicSettings?.home_content || '')
+const renderedHomeContent = computed(() => renderPublicMarkdown(homeContent.value))
 const isHomeContentUrl = computed(() => {
   const content = homeContent.value.trim()
   return content.startsWith('http://') || content.startsWith('https://')

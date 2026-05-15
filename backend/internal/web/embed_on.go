@@ -7,24 +7,26 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"html"
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v3"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/setup"
 	"github.com/gin-gonic/gin"
+	"gopkg.in/yaml.v3"
 )
 
 const (
 	// NonceHTMLPlaceholder is the placeholder for nonce in HTML script tags
 	NonceHTMLPlaceholder = "__CSP_NONCE_VALUE__"
-	frontendPrivateKey    = "frontend_private_route"
+	frontendPrivateKey   = "frontend_private_route"
 )
 
 //go:embed all:dist
@@ -37,13 +39,13 @@ type PublicSettingsProvider interface {
 
 // FrontendServer serves the embedded frontend with settings injection
 type FrontendServer struct {
-	distFS      fs.FS
-	fileServer  http.Handler
-	baseHTML    []byte
-	cache       *HTMLCache
-	settings    PublicSettingsProvider
-	overrideDir string // local file override directory
-	pagesDir    string
+	distFS        fs.FS
+	fileServer    http.Handler
+	baseHTML      []byte
+	cache         *HTMLCache
+	settings      PublicSettingsProvider
+	overrideDir   string // local file override directory
+	pagesDir      string
 	htmlUserAuth  gin.HandlerFunc
 	htmlAdminAuth gin.HandlerFunc
 }
@@ -125,6 +127,17 @@ func frontendDataDir() string {
 	return base
 }
 
+func normalizeRequestPath(path string) string {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return "/"
+	}
+	if !strings.HasPrefix(trimmed, "/") {
+		trimmed = "/" + trimmed
+	}
+	return trimmed
+}
+
 // Middleware returns the Gin middleware handler
 func (s *FrontendServer) Middleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -149,7 +162,7 @@ func (s *FrontendServer) Middleware() gin.HandlerFunc {
 				} else {
 					redirect := "/login"
 					if path != "" && path != "/" {
-						redirect = "/login?redirect=" + c.Request.URL.Query().Escape()
+						redirect = "/login?redirect=" + url.QueryEscape(path)
 					}
 					c.Redirect(http.StatusFound, redirect)
 				}
@@ -289,7 +302,7 @@ func (s *FrontendServer) serveIndexHTML(c *gin.Context) {
 	settings, err := s.settings.GetPublicSettingsForInjection(ctx)
 	if err != nil {
 		// Fallback: serve without injection
-		c.Data(statusCode, "text/html; charset=utf-8", s.baseHTML)
+		c.Data(http.StatusOK, "text/html; charset=utf-8", s.baseHTML)
 		c.Abort()
 		return
 	}
@@ -343,27 +356,56 @@ func (s *FrontendServer) injectSettings(settingsJSON []byte) []byte {
 
 // injectSiteTitle replaces the static <title> in HTML with the configured site name.
 // This ensures the browser tab shows the correct title before JS executes.
-func injectSiteTitle(html, settingsJSON []byte) []byte {
+func injectSiteTitle(docHTML, settingsJSON []byte) []byte {
 	var cfg struct {
 		SiteName string `json:"site_name"`
 	}
-	if err := json.Unmarshal(settingsJSON, &cfg); err != nil || cfg.SiteName == "" {
-		return html
+	if err := json.Unmarshal(settingsJSON, &cfg); err != nil {
+		return docHTML
+	}
+
+	siteName := strings.TrimSpace(cfg.SiteName)
+	if siteName == "" {
+		return docHTML
+	}
+	siteName = strings.ReplaceAll(siteName, "\r", " ")
+	siteName = strings.ReplaceAll(siteName, "\n", " ")
+	siteName = strings.Join(strings.Fields(siteName), " ")
+	if siteName == "" {
+		return docHTML
+	}
+
+	const maxSiteTitleRunes = 80
+	siteName = trimRunes(siteName, maxSiteTitleRunes)
+	escapedSiteName := html.EscapeString(siteName)
+	if escapedSiteName == "" {
+		return docHTML
 	}
 
 	// Find and replace the existing <title>...</title>
-	titleStart := bytes.Index(html, []byte("<title>"))
-	titleEnd := bytes.Index(html, []byte("</title>"))
+	titleStart := bytes.Index(docHTML, []byte("<title>"))
+	titleEnd := bytes.Index(docHTML, []byte("</title>"))
 	if titleStart == -1 || titleEnd == -1 || titleEnd <= titleStart {
-		return html
+		return docHTML
 	}
 
-	newTitle := []byte("<title>" + cfg.SiteName + " - AI API Gateway</title>")
+	newTitle := []byte("<title>" + escapedSiteName + " - AI API Gateway</title>")
 	var buf bytes.Buffer
-	buf.Write(html[:titleStart])
+	buf.Write(docHTML[:titleStart])
 	buf.Write(newTitle)
-	buf.Write(html[titleEnd+len("</title>"):])
+	buf.Write(docHTML[titleEnd+len("</title>"):])
 	return buf.Bytes()
+}
+
+func trimRunes(value string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= maxRunes {
+		return value
+	}
+	return string(runes[:maxRunes])
 }
 
 // replaceNoncePlaceholder replaces the nonce placeholder with actual nonce value
