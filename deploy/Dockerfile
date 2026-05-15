@@ -30,8 +30,8 @@ ENV VITE_PRERENDER_SETTINGS_URL=${VITE_PRERENDER_SETTINGS_URL}
 ENV VITE_PRERENDER_PUBLIC_PAGES_URL=${VITE_PRERENDER_PUBLIC_PAGES_URL}
 ENV VITE_PRERENDER_TUTORIAL_DOCUMENT_URL=${VITE_PRERENDER_TUTORIAL_DOCUMENT_URL}
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Install the repo-validated pnpm version so local and container builds stay aligned.
+RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
 
 # Install dependencies first (better caching)
 COPY frontend/package.json frontend/pnpm-lock.yaml frontend/.npmrc frontend/pnpm-workspace.yaml ./
