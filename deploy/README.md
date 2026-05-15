@@ -41,6 +41,8 @@ The supported production build path is:
 
 `deploy/Dockerfile` and the repository-root `Dockerfile` now both follow this flow. `backend/Dockerfile` intentionally fails by default so a backend-only image is not built by mistake; only use it with an explicit `--build-arg ALLOW_BACKEND_ONLY_IMAGE=true` for backend-only debugging.
 
+For `docker-compose.local.yml`, the build network now defaults to Docker's normal bridge network. If you explicitly need host-network access for prerender data during image build, set `BUILD_NETWORK=host` in your environment before running `docker compose build`.
+
 ### Method 1: One-Click Deployment (Recommended)
 
 Use the automated preparation script for the easiest setup:
