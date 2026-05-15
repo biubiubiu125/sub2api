@@ -79,7 +79,7 @@ func validatePublicSiteBaseURL(raw string) error {
 	return nil
 }
 
-func validateSEOImageURL(raw string) error {
+func validateSiteLogoURL(raw string) error {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil
@@ -1079,7 +1079,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		}
 	}
 	req.SiteLogo = strings.TrimSpace(req.SiteLogo)
-	if err := validateSEOImageURL(req.SiteLogo); err != nil {
+	if err := validateSiteLogoURL(req.SiteLogo); err != nil {
 		response.BadRequest(c, "Site logo must be an absolute http(s) URL, a site-relative path, or a supported image data URL")
 		return
 	}

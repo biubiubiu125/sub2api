@@ -368,7 +368,6 @@ export default {
     ops: '运维监控',
     promoCodes: '优惠码',
     riskControl: '风控中心',
-    seoSettings: 'SEO配置',
     settings: '系统设置',
     myAccount: '我的账户',
     lightMode: '浅色模式',

@@ -368,7 +368,6 @@ export default {
     ops: 'Ops',
     promoCodes: 'Promo Codes',
     riskControl: 'Risk Control',
-    seoSettings: 'SEO Configuration',
     settings: 'Settings',
     myAccount: 'My Account',
     lightMode: 'Light Mode',

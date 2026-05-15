@@ -6,11 +6,6 @@ import i18n, { initI18n } from './i18n'
 import { useAppStore } from '@/stores/app'
 import './style.css'
 
-// Force a fresh entry chunk hash when admin SEO page copy changes,
-// so browsers stop reusing stale lazy-loaded route chunks after deploys.
-const __SEO_CONFIG_BUILD_MARKER__ = 'seo-config-copy-refresh-20260508-2'
-void __SEO_CONFIG_BUILD_MARKER__
-
 function initThemeClass() {
   const savedTheme = localStorage.getItem('theme')
   const shouldUseDark =
